@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -30,6 +31,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import CITEXT, INET, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from . import Base
@@ -50,10 +52,7 @@ EMPTY_JSONB = text("'{}'::jsonb")
 ROLE_VALUES = ("super_admin", "team_admin", "developer")
 
 
-def _role_enum():
-    # Imported lazily to keep the model module import-time side-effect free.
-    from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
-
+def _role_enum() -> PG_ENUM:
     return PG_ENUM(
         *ROLE_VALUES,
         name="user_role",
@@ -74,7 +73,7 @@ class Organization(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID_PK, primary_key=True, server_default=GEN_UUID)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     slug: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    settings: Mapped[dict] = mapped_column(
+    settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=EMPTY_JSONB
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -310,7 +309,7 @@ class AuditLog(Base):
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     ip: Mapped[str | None] = mapped_column(INET, nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    diff: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    diff: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
         # Time-range queries dominate (admin audit log views).
