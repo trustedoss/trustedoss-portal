@@ -3,13 +3,12 @@ FastAPI application entrypoint.
 
 Wires together:
 - structlog JSON logging
-- request_id middleware
-- RFC 7807 exception handlers
+- request_id middleware + audit context middleware
+- RFC 7807 exception handlers (and slowapi 429 handler)
 - async SQLAlchemy engine bound to app.state during the lifespan
+- audit_logs SQLAlchemy event listener
 - /health endpoint (used by docker-compose healthchecks and probes)
-
-Phase 0 PR #2 deliberately keeps the surface tiny — domain routers (auth,
-projects, scans, …) land in their respective Phases.
+- /auth router (Phase 1 PR #5 — register/login/refresh/logout/me)
 """
 
 from __future__ import annotations
@@ -20,16 +19,22 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.errors import RateLimitExceeded
 
+from api.v1 import auth_router
+from core.audit import install_audit_listeners
 from core.config import (
     app_env,
     cors_allowed_origins,
     log_level,
+    secret_key,
+    validate_cors_origins,
 )
 from core.db import build_engine, build_session_factory
 from core.errors import install_exception_handlers
 from core.logging import configure_logging
-from core.middleware import RequestIDMiddleware
+from core.middleware import AuditContextMiddleware, RequestIDMiddleware
+from core.ratelimit import limiter, rate_limit_exceeded_handler
 
 
 @asynccontextmanager
@@ -38,9 +43,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log = structlog.get_logger("startup")
     log.info("backend_starting", app_env=app_env())
 
+    # C-1: fail fast if SECRET_KEY is missing/short in non-dev environments.
+    # secret_key() raises RuntimeError; we let it propagate so the process
+    # crashes on boot rather than booting with a weak key.
+    secret_key()
+
     engine = build_engine()
     app.state.engine = engine
-    app.state.session_factory = build_session_factory(engine)
+    session_factory = build_session_factory(engine)
+    app.state.session_factory = session_factory
+
+    # Install the audit-log SQLAlchemy event listener now that we have a
+    # session factory bound. Listeners are deduplicated inside the helper so
+    # repeated starts (tests + uvicorn reloader) do not double-fire.
+    install_audit_listeners(session_factory)
 
     try:
         yield
@@ -52,20 +68,40 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="TrustedOSS Portal API",
     version="0.0.1",
-    description="Open-source enterprise SCA portal — bootstrap (Phase 0 PR #2).",
+    description="Open-source enterprise SCA portal — auth surface (Phase 1 PR #5).",
     lifespan=lifespan,
 )
 
+# Order matters for ASGI middlewares — added later runs first.
+# We want: RequestID → AuditContext → app handler.
+# slowapi rate limiting is applied via the @limiter.limit decorator inside
+# routes; we deliberately avoid SlowAPIMiddleware (which is a
+# BaseHTTPMiddleware) because it interacts badly with async SQLAlchemy
+# (cross-event-loop futures + body re-reading that breaks Pydantic body
+# parsing). The decorator + exception handler give us the same 5/min/IP
+# guarantee without the side effects.
+app.state.limiter = limiter
+app.add_middleware(AuditContextMiddleware)
 app.add_middleware(RequestIDMiddleware)
+
+# H-3: validate CORS configuration before registering the middleware so a
+# misconfigured allow-list (wildcard with credentials, or http:// in prod)
+# crashes boot instead of silently exposing a permissive policy.
+_cors_origins = cors_allowed_origins()
+validate_cors_origins(_cors_origins, env=app_env())
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_allowed_origins(),
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # H-3: pin methods + headers to the actual surface we use instead of "*".
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["authorization", "content-type", "x-request-id"],
 )
 
 install_exception_handlers(app)
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+app.include_router(auth_router)
 
 
 @app.get("/health", tags=["system"], summary="Liveness probe")

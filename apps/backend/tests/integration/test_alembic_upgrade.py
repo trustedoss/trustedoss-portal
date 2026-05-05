@@ -58,5 +58,6 @@ def test_alembic_current_reports_head_revision():
         timeout=30,
     )
     assert current.returncode == 0, current.stderr
-    # The first migration revision id is `0001`.
-    assert "0001" in current.stdout, current.stdout
+    # `alembic current` prints the head revision; today that is `0002` (auth
+    # schema). When PR #5 adds further migrations, bump this assertion.
+    assert "0002" in current.stdout, current.stdout

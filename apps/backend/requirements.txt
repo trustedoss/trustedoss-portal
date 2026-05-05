@@ -9,3 +9,11 @@ redis==5.2.0
 structlog==24.4.0
 httpx==0.28.1
 python-multipart==0.0.20
+# Auth — Phase 1 PR #5.
+# bcrypt is pinned to 4.0.1 because passlib 1.7.4 is incompatible with
+# bcrypt >= 4.1 (passlib reads bcrypt.__about__.__version__, which 4.1+ removed).
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-jose[cryptography]==3.4.0  # H-1: CVE fix (algorithm confusion / DoS)
+slowapi==0.1.9
+email-validator==2.2.0
