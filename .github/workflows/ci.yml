@@ -404,14 +404,18 @@ jobs:
         working-directory: apps/frontend
         run: npx playwright install --with-deps chromium
 
-      # docker-compose V1 (CLAUDE.md core rule #10). ubuntu-22.04 ships it
-      # pre-installed at /usr/local/bin/docker-compose.
-      - name: Verify docker-compose V1 available
-        run: docker-compose --version
+      # CI uses docker compose V2 (`docker compose`) because ubuntu-22.04
+      # runners no longer ship docker-compose V1 (the binary was removed
+      # from hosted images in 2024; first PR #9 push surfaced the gap with
+      # exit 127 on this verify step). Host development still uses V1 per
+      # CLAUDE.md core rule #10 — the divergence is contained to this job
+      # and V2 reads the same docker-compose.dev.yml unchanged.
+      - name: Verify docker compose V2 available
+        run: docker compose version
 
       - name: Bring up dev stack
         run: |
-          docker-compose -f docker-compose.dev.yml up -d \
+          docker compose -f docker-compose.dev.yml up -d \
             postgres redis backend celery-worker frontend
 
       - name: Wait for stack to become healthy
@@ -425,7 +429,7 @@ jobs:
           while :; do
             healthy=0
             for svc in "${services[@]}"; do
-              cid=$(docker-compose -f docker-compose.dev.yml ps -q "$svc")
+              cid=$(docker compose -f docker-compose.dev.yml ps -q "$svc")
               if [ -z "$cid" ]; then
                 continue
               fi
@@ -440,7 +444,7 @@ jobs:
             fi
             if [ "$(date +%s)" -ge "$deadline" ]; then
               echo "::error::stack did not become healthy within 180s"
-              docker-compose -f docker-compose.dev.yml ps
+              docker compose -f docker-compose.dev.yml ps
               exit 1
             fi
             sleep 5
@@ -448,7 +452,7 @@ jobs:
 
       - name: Run alembic migrations
         run: |
-          docker-compose -f docker-compose.dev.yml exec -T backend \
+          docker compose -f docker-compose.dev.yml exec -T backend \
             alembic upgrade head
 
       - name: Seed e2e user (fail fast if seed broken)
@@ -456,7 +460,7 @@ jobs:
         # broken seed surfaces in <5s instead of after a full Playwright
         # boot. The spec re-runs the script per scenario for isolation.
         run: |
-          docker-compose -f docker-compose.dev.yml exec -T backend \
+          docker compose -f docker-compose.dev.yml exec -T backend \
             python scripts/seed_e2e_user.py --project-names ci-smoke
 
       - name: Run Playwright e2e
@@ -474,7 +478,7 @@ jobs:
 
       - name: Dump compose logs on failure
         if: failure()
-        run: docker-compose -f docker-compose.dev.yml logs --tail=200
+        run: docker compose -f docker-compose.dev.yml logs --tail=200
 
       - name: Upload Playwright report
         if: always()
@@ -496,4 +500,4 @@ jobs:
 
       - name: Tear down stack
         if: always()
-        run: docker-compose -f docker-compose.dev.yml down -v
+        run: docker compose -f docker-compose.dev.yml down -v
