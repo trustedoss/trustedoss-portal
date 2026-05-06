@@ -1,9 +1,10 @@
 """
-E2E seed helper — Phase 2 PR #9 + Phase 3 PR #10 + Phase 3 PR #11.
+E2E seed helper — Phase 2 PR #9 + Phase 3 PR #10 + Phase 3 PR #11 + Phase 3 PR #13.
 
 The frontend e2e suite (``apps/frontend/tests/e2e/scan_flow.spec.ts``,
 ``apps/frontend/tests/e2e/project_detail.spec.ts``,
-``apps/frontend/tests/e2e/vulnerabilities.spec.ts``) needs a user with team
+``apps/frontend/tests/e2e/vulnerabilities.spec.ts``,
+``apps/frontend/tests/e2e/obligations.spec.ts``) needs a user with team
 memberships and one or more projects so it can drive the project list,
 detail, and scan progress flows. The auth surface has no team-creation
 endpoint by design (Phase 3 work — onboarding wizard) and brand-new users
@@ -23,6 +24,14 @@ For PR #10 (Project Detail) the script optionally also seeds:
     conditional, allowed, unknown). Names are generated as ``{prefix}-N``
     so spec searches like ``searchComponents("react")`` can hit a known
     prefix without having to fetch the seeded id list.
+
+For PR #13 (Obligations tab) the script optionally also seeds:
+
+  * ``--with-obligations`` attaches a small obligation catalog to each of
+    the seed-licenses created by ``--component-count``. Two obligations per
+    license (kind + text + link) so distribution / list / NOTICE scenarios
+    have meaningful rows. No-op when ``--component-count`` is 0 (no
+    licenses are created in that mode).
 
 For PR #11 (Vulnerabilities tab) the script optionally also seeds:
 
@@ -116,6 +125,58 @@ _VULN_SEVERITY_VALUES: frozenset[str] = frozenset(
     {"critical", "high", "medium", "low", "info", "unknown"}
 )
 
+# PR #13 — obligation catalog seed.
+# Two obligations per category-license. Kind matches the canonical ranking
+# advertised by KNOWN_OBLIGATION_KINDS (schemas.obligation_detail) so the
+# distribution payload renders in a stable order. Text and link are stubs;
+# their length is comfortably > 50 chars so e2e content checks have material
+# to grep against.
+_OBLIGATIONS_BY_CATEGORY: dict[str, tuple[tuple[str, str, str], ...]] = {
+    "forbidden": (
+        (
+            "copyleft",
+            "Distribution requires releasing source code under the same license terms.",
+            "https://example.invalid/policy/forbidden-copyleft",
+        ),
+        (
+            "source-disclosure",
+            "Customers must be granted access to the corresponding source code on demand.",
+            "https://example.invalid/policy/forbidden-source",
+        ),
+    ),
+    "conditional": (
+        (
+            "attribution",
+            "You must include the original copyright notice in user-facing materials.",
+            "https://example.invalid/policy/conditional-attribution",
+        ),
+        (
+            "modifications",
+            "Modified files must carry prominent notices of the changes made.",
+            "https://example.invalid/policy/conditional-modifications",
+        ),
+    ),
+    "allowed": (
+        (
+            "attribution",
+            "Include the original copyright notice when redistributing source or binaries.",
+            "https://example.invalid/policy/allowed-attribution",
+        ),
+        (
+            "no-endorsement",
+            "Do not use the project name or contributors to endorse derivative products.",
+            "https://example.invalid/policy/allowed-no-endorsement",
+        ),
+    ),
+    "unknown": (
+        (
+            "attribution",
+            "License terms could not be determined automatically — preserve any attribution found.",
+            "https://example.invalid/policy/unknown-attribution",
+        ),
+    ),
+}
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Seed an e2e user + projects.")
@@ -160,6 +221,16 @@ def _parse_args() -> argparse.Namespace:
             "'{prefix}-{i}'. Default: 'comp'. e2e search scenarios fix this "
             "to a known string (e.g. 'react') so they can match a row by "
             "substring without having to learn ids."
+        ),
+    )
+    parser.add_argument(
+        "--with-obligations",
+        action="store_true",
+        default=False,
+        help=(
+            "Phase 3 PR #13. Attach a small obligation catalog (1-2 rows) "
+            "to each seed-license created by --component-count. No-op when "
+            "--component-count is 0 because no seed-licenses exist."
         ),
     )
     parser.add_argument(
@@ -248,6 +319,7 @@ async def _seed(  # noqa: PLR0915 — a single linear seed routine reads better 
     component_prefix: str,
     vulnerability_count: int = 0,
     vulnerability_severity_mix: str | None = None,
+    with_obligations: bool = False,
 ) -> dict[str, object]:
     """Create the org/team/user/membership/projects[/scans/components]."""
     from sqlalchemy.ext.asyncio import (
@@ -264,6 +336,7 @@ async def _seed(  # noqa: PLR0915 — a single linear seed routine reads better 
         License,
         LicenseFinding,
         Membership,
+        Obligation,
         Organization,
         Project,
         Scan,
@@ -363,6 +436,7 @@ async def _seed(  # noqa: PLR0915 — a single linear seed routine reads better 
                     scan_ids.append(str(scan.id))
 
             seeded_components = 0
+            seeded_obligations_count = 0
             if component_count > 0 and project_rows:
                 # Anchor every seeded component on the first project's scan.
                 first_project = project_rows[0]
@@ -384,6 +458,24 @@ async def _seed(  # noqa: PLR0915 — a single linear seed routine reads better 
                 await session.commit()
                 for licence in licenses_by_cat.values():
                     await session.refresh(licence)
+
+                # PR #13 — obligation catalog rows hanging off each seed
+                # license. Only seeded when the caller asked for them so we
+                # don't perturb existing PR #10 / PR #11 e2e fixtures that
+                # don't expect obligations.
+                if with_obligations:
+                    for cat, licence in licenses_by_cat.items():
+                        for kind, text, link in _OBLIGATIONS_BY_CATEGORY.get(cat, ()):
+                            obligation = Obligation(
+                                license_id=licence.id,
+                                kind=kind,
+                                text=text,
+                                link=link,
+                            )
+                            session.add(obligation)
+                            seeded_obligations_count += 1
+                    if seeded_obligations_count:
+                        await session.commit()
 
                 # Pre-create one vulnerability per non-trivial severity. The
                 # 'info' / 'none' buckets get no finding (so the component's
@@ -546,6 +638,7 @@ async def _seed(  # noqa: PLR0915 — a single linear seed routine reads better 
                 "scan_ids": scan_ids,
                 "component_count": seeded_components,
                 "vulnerability_count": seeded_vulnerabilities,
+                "obligation_count": seeded_obligations_count,
             }
     finally:
         await engine.dispose()
@@ -575,6 +668,7 @@ def main() -> int:
                 component_prefix=args.component_prefix,
                 vulnerability_count=args.vulnerability_count,
                 vulnerability_severity_mix=args.vulnerability_severity_mix,
+                with_obligations=args.with_obligations,
             )
         )
     except Exception as exc:  # noqa: BLE001 — top-level CLI handler

@@ -10,13 +10,8 @@
     "overview": "Overview",
     "components": "Components",
     "vulnerabilities": "Vulnerabilities",
-    "licenses": "Licenses"
-  },
-  "tabs_placeholder": {
-    "licenses": {
-      "title": "Licenses tab",
-      "subtitle": "Coming soon — tracked under PR #12."
-    }
+    "licenses": "Licenses",
+    "obligations": "Obligations"
   },
   "severity": {
     "critical": "Critical",
@@ -325,6 +320,73 @@
         "kind_label": "Kind"
       },
       "cross_link_component": "View component"
+    }
+  },
+  "obligations": {
+    "summary": "{{loaded}} of {{total}} shown",
+    "distribution": {
+      "label": "By kind"
+    },
+    "kind": {
+      "attribution": "Attribution",
+      "notice": "NOTICE preservation",
+      "source-disclosure": "Source disclosure",
+      "copyleft": "Copyleft",
+      "modifications": "Modification notice",
+      "dynamic-linking": "Dynamic linking",
+      "no-endorsement": "No endorsement"
+    },
+    "column": {
+      "spdx_id": "SPDX",
+      "license_name": "License",
+      "category": "Category",
+      "kind": "Kind",
+      "affected_count": "Components"
+    },
+    "toolbar": {
+      "search_label": "Search",
+      "search_placeholder": "Search by SPDX, license name, kind, or text…",
+      "filter_kind": "Kind",
+      "filter_category": "Category",
+      "sort_label": "Sort by",
+      "sort": {
+        "category": "License category",
+        "license_name": "License name",
+        "kind": "Obligation kind",
+        "affected_count": "Affected components"
+      },
+      "order_label": "Order",
+      "order_asc": "Ascending",
+      "order_desc": "Descending",
+      "notice_label": "NOTICE file",
+      "notice_download": "Download NOTICE",
+      "notice_downloading": "Generating…"
+    },
+    "empty": {
+      "title": "No obligations recorded",
+      "description": "The project's latest scan does not surface any catalog obligations. Run a scan or seed a license catalog to populate this view."
+    },
+    "errors": {
+      "load_list": "Could not load the obligation list.",
+      "load_detail": "Could not load this obligation."
+    },
+    "drawer": {
+      "title": "Obligation: {{kind}}",
+      "subtitle": "Attached to {{license}}",
+      "loading_title": "Loading obligation…",
+      "loading_subtitle": "Fetching catalog details.",
+      "metadata": {
+        "license_label": "License",
+        "license_reference_label": "License reference",
+        "reference_label": "Reference"
+      },
+      "section": {
+        "obligation": "Obligation",
+        "affected": "Affected components ({{count}})"
+      },
+      "affected": {
+        "empty": "No affected components in the latest scan."
+      }
     }
   }
 }

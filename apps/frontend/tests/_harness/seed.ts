@@ -38,6 +38,8 @@ export interface SeedSummary {
   component_count?: number;
   /** Number of vulnerability findings attached to the first project's scan. */
   vulnerability_count?: number;
+  /** Number of obligation rows attached to the seeded licenses (PR #13). */
+  obligation_count?: number;
 }
 
 export interface SeedOptions {
@@ -78,6 +80,12 @@ export interface SeedOptions {
    * 2 unknown).
    */
   vulnerabilitySeverityMix?: string;
+  /**
+   * Phase 3 PR #13. When true, attach a small obligation catalog to each
+   * seed-license created by `componentCount`. No-op when `componentCount`
+   * is 0 because no seed-licenses exist.
+   */
+  withObligations?: boolean;
 }
 
 /**
@@ -124,6 +132,9 @@ export function seedE2eUser(opts: SeedOptions): SeedSummary {
   }
   if (opts.vulnerabilitySeverityMix) {
     args.push("--vulnerability-severity-mix", opts.vulnerabilitySeverityMix);
+  }
+  if (opts.withObligations) {
+    args.push("--with-obligations");
   }
 
   // Default DATABASE_URL points at the host-mapped Postgres exposed by

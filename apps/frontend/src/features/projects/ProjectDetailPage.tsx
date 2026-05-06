@@ -13,6 +13,7 @@ import {
 import { useProjectOverview } from "@/features/projects/api/useProjectOverview";
 import { ComponentsTab } from "@/features/projects/components/ComponentsTab";
 import { LicensesTab } from "@/features/projects/components/LicensesTab";
+import { ObligationsTab } from "@/features/projects/components/ObligationsTab";
 import { OverviewTab } from "@/features/projects/components/OverviewTab";
 import { RiskGauge } from "@/features/projects/components/RiskGauge";
 import { VulnerabilitiesTab } from "@/features/projects/components/VulnerabilitiesTab";
@@ -24,17 +25,19 @@ import { cn } from "@/lib/utils";
  * ProjectDetailPage — Phase 3 PR #10.
  *
  * Detail page rendered at `/projects/:id`. Houses the tab strip
- * (Overview / Components / Vulnerabilities / Licenses) and a
+ * (Overview / Components / Vulnerabilities / Licenses / Obligations) and a
  * breadcrumb-flavored header with the project name + risk badge.
- *
- * Vulnerabilities and Licenses tabs are placeholder until PR #11 / #12
- * land. Disabled triggers keep the future shape visible without leaking a
- * half-built screen.
  *
  * Tab selection is mirrored into `?tab=…` so reload + deep-link survive.
  */
 
-const ALLOWED_TABS = new Set(["overview", "components", "vulnerabilities", "licenses"]);
+const ALLOWED_TABS = new Set([
+  "overview",
+  "components",
+  "vulnerabilities",
+  "licenses",
+  "obligations",
+]);
 
 export function ProjectDetailPage() {
   const { t } = useTranslation("project_detail");
@@ -71,13 +74,15 @@ export function ProjectDetailPage() {
         const merged = new URLSearchParams(prev);
         // When switching tabs, drop tab-scoped filter params so we don't
         // carry a stale severity filter into Overview. Components,
-        // Vulnerabilities, and Licenses all use `search` / `sort` / `order`,
-        // but they have distinct drawer keys (`drawer` / `vuln` / `license`),
-        // distinct multi-filter axes, and distinct pagination semantics.
+        // Vulnerabilities, Licenses, and Obligations all use `search` /
+        // `sort` / `order`, but they have distinct drawer keys (`drawer` /
+        // `vuln` / `license` / `obligation`), distinct multi-filter axes,
+        // and distinct pagination semantics.
         if (
           next !== "components" &&
           next !== "vulnerabilities" &&
-          next !== "licenses"
+          next !== "licenses" &&
+          next !== "obligations"
         ) {
           merged.delete("search");
           merged.delete("sort");
@@ -86,11 +91,14 @@ export function ProjectDetailPage() {
         if (next !== "components" && next !== "vulnerabilities") {
           merged.delete("severity");
         }
-        if (next !== "components" && next !== "licenses") {
-          // Components uses license_category as its license filter, Licenses
-          // tab reuses the same param name for the per-row category filter.
-          // The selected category bucket is meaningful in both, but stale
-          // values from one tab into the other would still mislead — drop.
+        if (
+          next !== "components" &&
+          next !== "licenses" &&
+          next !== "obligations"
+        ) {
+          // license_category is shared by Components, Licenses, and the
+          // Obligations tab (PR #13) — drop it when leaving all three so
+          // the next non-licensing tab doesn't carry a stale bucket.
           merged.delete("license_category");
         }
         if (next !== "components") {
@@ -100,12 +108,25 @@ export function ProjectDetailPage() {
           merged.delete("vuln");
           merged.delete("status");
         }
-        if (next !== "vulnerabilities" && next !== "licenses") {
+        if (
+          next !== "vulnerabilities" &&
+          next !== "licenses" &&
+          next !== "obligations"
+        ) {
           merged.delete("page");
+        }
+        if (next !== "licenses" && next !== "obligations") {
+          // `kind` is used by both the Licenses tab (declared/concluded/
+          // detected) and the Obligations tab (open catalog). Keep it
+          // across those two so a deep-link with kind set survives the
+          // pivot, but drop it when leaving for an unrelated tab.
+          merged.delete("kind");
         }
         if (next !== "licenses") {
           merged.delete("license");
-          merged.delete("kind");
+        }
+        if (next !== "obligations") {
+          merged.delete("obligation");
         }
         if (next === "overview") {
           merged.delete("tab");
@@ -159,6 +180,12 @@ export function ProjectDetailPage() {
           >
             {t("tabs.licenses")}
           </TabsTrigger>
+          <TabsTrigger
+            value="obligations"
+            data-testid="project-detail-tab-obligations"
+          >
+            {t("tabs.obligations")}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -172,6 +199,12 @@ export function ProjectDetailPage() {
         </TabsContent>
         <TabsContent value="licenses">
           <LicensesTab projectId={projectId} />
+        </TabsContent>
+        <TabsContent value="obligations">
+          <ObligationsTab
+            projectId={projectId}
+            projectName={projectQuery.data?.name ?? null}
+          />
         </TabsContent>
       </Tabs>
     </div>
