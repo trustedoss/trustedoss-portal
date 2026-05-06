@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from tests._helpers import (
@@ -147,12 +148,27 @@ async def _make_license(
     name: str | None = None,
     category: str = "allowed",
 ):
+    """Idempotent license fixture.
+
+    The unit-test DB is module-scoped (alembic upgrade head once, then commits
+    survive across tests within the file), so multiple tests asking for the
+    same hardcoded spdx_id (`MIT`, `Apache-2.0`, …) would otherwise hit
+    `uq_licenses_spdx_id`. SELECT first, INSERT only when absent. The
+    `category` of an existing row wins — callers must not rely on this fixture
+    to mutate category between tests; they should pick a different spdx_id.
+    """
     from models import License
 
-    suffix = unique_suffix()
+    resolved_spdx = spdx_id or f"LicenseRef-{unique_suffix()}"
+    existing = await session.scalar(
+        select(License).where(License.spdx_id == resolved_spdx)
+    )
+    if existing is not None:
+        return existing
+
     licence = License(
-        spdx_id=spdx_id or f"LicenseRef-{suffix}",
-        name=name or f"License {suffix}",
+        spdx_id=resolved_spdx,
+        name=name or f"License {unique_suffix()}",
         category=category,
     )
     session.add(licence)
