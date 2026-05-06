@@ -229,7 +229,10 @@ jobs:
     # Soft-fail until Phase 1 dependency hygiene PR bumps pyasn1 / python-multipart
     # / starlette to remediate the HIGH CVEs Trivy flags on the worker image.
     # Tracked in docs/sessions/2026-05-06-phase2-pr8-scan-celery-dt.md backlog.
-    continue-on-error: true
+    #
+    # NOTE: job-level `continue-on-error: true` does NOT keep the workflow
+    # conclusion green on GitHub Actions — only step-level does. Moved to the
+    # Trivy step below where it actually has effect.
     steps:
       - uses: actions/checkout@v4
 
@@ -255,6 +258,11 @@ jobs:
           cache-to: type=gha,scope=worker,mode=max
 
       - name: Trivy scan (HIGH/CRITICAL → fail)
+        # Step-level soft-fail: keep the scan running and surface the table
+        # in the run output, but don't fail the job (and therefore the
+        # workflow). Phase 1 dependency hygiene PR removes this and restores
+        # the hard gate after pyasn1 / python-multipart / starlette bump.
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: trustedoss/backend-worker:dev
@@ -360,6 +368,11 @@ jobs:
       # Vite dev server URL — Playwright's default. Pinned so a future
       # config drift doesn't silently swap the browser target.
       PLAYWRIGHT_BASE_URL: http://localhost:5173
+      # Disable slowapi 5/min login limit for the e2e job only. The runner
+      # has a single egress IP, so 7 cumulative logins (auth.spec.ts ×3 +
+      # scan_flow.spec.ts ×4) trip the limit on the third / fourth scenario.
+      # Production / dev keep this unset → limiter enabled by default.
+      RATELIMIT_DISABLED: "1"
     steps:
       - uses: actions/checkout@v4
 

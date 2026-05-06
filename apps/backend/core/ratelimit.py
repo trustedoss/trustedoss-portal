@@ -21,6 +21,8 @@ H-4 (security-reviewer blocker):
 
 from __future__ import annotations
 
+import os
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
@@ -32,6 +34,21 @@ from core.errors import PROBLEM_CONTENT_TYPE
 
 # Module-level constant — this is policy, not configuration. Keep it in code.
 LOGIN_RATE_LIMIT = "5/minute"
+
+
+def _limiter_enabled() -> bool:
+    """
+    PR #9 e2e fix: GitHub-hosted runners share a single egress IP, so the
+    5/min login budget is consumed across the auth.spec.ts (3 logins) +
+    scan_flow.spec.ts (4 logins + retries) in a single e2e job and trips
+    "Rate limit exceeded" on the third / fourth scenario. Setting
+    RATELIMIT_DISABLED=1 in the e2e workflow disables slowapi for that job
+    only. Production / dev keep the variable unset → enabled by default.
+
+    The toggle is environment-only: there is no API path or admin surface
+    to flip it at runtime, which keeps the production posture safe.
+    """
+    return os.getenv("RATELIMIT_DISABLED", "").lower() not in ("1", "true", "yes")
 
 
 def _client_ip_for_limit(request: Request) -> str:
@@ -57,6 +74,7 @@ limiter = Limiter(
     key_func=_client_ip_for_limit,
     default_limits=[],
     storage_uri=redis_url(),
+    enabled=_limiter_enabled(),
 )
 
 
