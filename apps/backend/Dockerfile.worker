@@ -33,7 +33,21 @@ ENV PYTHONUNBUFFERED=1 \
 
 # psycopg2 (sync, used by alembic) needs libpq + a C compiler;
 # curl powers the docker-compose healthcheck and tool downloads.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+#
+# `apt-get upgrade -y` (deterministic security patching of the base layer):
+#   python:3.12.7-slim is debian-bookworm and pins each OS package to the
+#   snapshot taken when the python image was built — so libgnutls30 lands
+#   at 3.7.9-2+deb12u3 even after Debian publishes -u5 / -u6 to the
+#   bookworm-security channel (CVE-2025-32988 / CVE-2025-32990, et al.).
+#   Trivy flags those as HIGH+CRITICAL on the worker image. Running an
+#   `upgrade` here pulls every installed OS package up to the latest
+#   patch from the security channel, independently of when the upstream
+#   python image is rebuilt. Repeated for the worker stage's apt run too,
+#   because that one installs unzip/git/mercurial which can carry their
+#   own transitive OS deps.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
         build-essential \
         libpq-dev \
         curl \
@@ -56,7 +70,11 @@ FROM base AS worker
 # ORT VCS analyzers; ca-certificates already installed in stage 1. Java is
 # installed below from Eclipse Temurin (apt repo) — ORT 85.x requires JRE
 # 21 (class file v65), and Debian bookworm only ships JDK 17 by default.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# `apt-get upgrade -y` repeated here so anything pulled by unzip/git/mercurial
+# also lands on the bookworm-security patch level (see stage 1 comment).
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
         unzip \
         git \
         mercurial \
@@ -84,19 +102,70 @@ ENV JAVA_HOME=/usr/lib/jvm/java-21 \
 # We pin the deb major (20.x) via the NodeSource distribution and the patch
 # via apt-mark hold — NodeSource repos only carry the latest in the 20.x
 # line, but pinning here documents intent and lets us bump deliberately.
-ENV NODE_MAJOR=20
+#
+# npm self-upgrade to 11.13.0 (deterministic security patching of the npm
+# CLI bundled with Node 20.x): NodeSource Node.js 20.18.x ships with npm
+# 10.8.2, whose bundled deps (cross-spawn 7.0.3, glob 10.4.2, minimatch
+# 9.0.5, tar 6.2.1) carry 11 HIGH Trivy findings under
+# usr/lib/node_modules/npm/node_modules/* (CVE-2024-21538 cross-spawn ReDoS
+# + CVE-2025-64756 glob CmdInjection + 3 minimatch DoS + 6 tar
+# arbitrary-write/path-traversal). npm 11.13.0 drops cross-spawn entirely
+# and pulls bundled tar 7.5.13 / glob 13.0.6 / minimatch 10.2.5, all above
+# the highest fixed-version Trivy reports. The npm CLI is only invoked at
+# image-build time (this stage's `npm install -g cdxgen`) — the Celery
+# worker runtime never shells to npm — but Trivy scans the whole image
+# filesystem and the npm bundle is on it, so the only way to keep the
+# image-scan gate green without `.trivyignore` entries for tooling-not-
+# reached-at-runtime is to ship a patched npm.
+ENV NODE_MAJOR=20 \
+    NPM_VERSION=11.13.0
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
+    && npm install -g "npm@${NPM_VERSION}" \
     && node --version \
     && npm --version
 
-# ---- cdxgen 11.11.0 (Apache-2.0). ------------------------------------------
-# CycloneDX SBOM generator, 30+ ecosystems. Pinned to the head of the 11.x
-# line — well-paired with ORT. We install globally so it lands on PATH for
-# the celery worker. --omit=dev keeps the image lean.
-ENV CDXGEN_VERSION=11.11.0
-RUN npm install -g --omit=dev "@cyclonedx/cdxgen@${CDXGEN_VERSION}" \
+# ---- cdxgen 12.3.3 (Apache-2.0). -------------------------------------------
+# CycloneDX SBOM generator, 30+ ecosystems. The 12.x line trims the 11.x
+# transitive deps tree (drops cacache / pacote / @npmcli/run-script and
+# the cross-spawn 7.0.3 chain underneath) — that's the ~23 HIGH npm CVEs
+# Trivy flagged on cdxgen 11.11.0 (CVE-2024-21538 cross-spawn ReDoS et al.).
+# 12.x still supports Node 20 LTS via `engines.node: ^20 || ^22 || ^24 || ^25`.
+# We install globally so it lands on PATH for the celery worker.
+#
+# Install flags:
+#   --omit=dev      drops devDependencies (biome / poku / sinon / typescript)
+#                   so the image stays lean. Effective.
+#   --omit=optional kept for documentation-of-intent value, but does NOT
+#                   actually drop `@cdxgen/cdxgen-plugins-bin` from the
+#                   image. cdxgen 12.x ships a postinstall script that
+#                   downloads the plugin bundle independently of the
+#                   optionalDependencies key — verified empirically when
+#                   commit a1e2e14's Trivy run still found all 12 HIGH +
+#                   1 CRITICAL gobinary findings inside
+#                   .../node_modules/@cdxgen/cdxgen-plugins-bin*/plugins/
+#                   despite the flag.
+#                   Those 12 CVEs are runtime-UNREACHED — our cdxgen
+#                   invocation in apps/backend/integrations/cdxgen.py
+#                   only passes `-r -o <path> --spec-version 1.5 <src>`
+#                   and never executes any plugin (OSV matching is owned
+#                   by Dependency-Track, image SAST is out of scope).
+#                   The CVEs are therefore listed in `.trivyignore` at
+#                   the workspace root, category (3) per its policy
+#                   header, with per-CVE reach analysis. Phase 8
+#                   hardening backlog: carve the plugins-bin directory
+#                   out at image build time once we verify it doesn't
+#                   break cdxgen's startup self-test.
+#                   IMPORTANT: --omit=dev (devDependencies) and
+#                   --omit=optional (optionalDependencies) are independent
+#                   npm-config keys. If a future change needs cdxgen's
+#                   bundled scanners (e.g. wiring osv-scanner into the
+#                   pipeline), drop --omit=optional and add corresponding
+#                   .trivyignore entries with reach analysis — do not
+#                   rollback the gate.
+ENV CDXGEN_VERSION=12.3.3
+RUN npm install -g --omit=dev --omit=optional "@cyclonedx/cdxgen@${CDXGEN_VERSION}" \
     && cdxgen --version
 
 # ---- Trivy 0.70.0 (Apache-2.0). --------------------------------------------
