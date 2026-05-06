@@ -17,10 +17,20 @@
   - `python-jose[cryptography]`: `3.4.0` → **`3.5.0`** (pyasn1 0.6.x 호환 unblocker)
   - `annotated-doc==0.0.4` 신규 추가 (fastapi 0.120+ 신규 transitive)
   - 주석에 각 핀 변경의 CVE 번호와 변경 사유 명시.
-- **`.github/workflows/ci.yml` image-scan hard-fail 복원**:
-  - Trivy step 의 step-level `continue-on-error: true` 제거.
-  - 잡 위 주석 "Soft-fail until Phase 1 dependency hygiene PR..." → "Hard gate restored after the Phase 1 dependency hygiene chore PR bumped..." 로 갱신.
-  - Trivy 설정(action 버전, severity HIGH/CRITICAL, ignore-unfixed, exit-code 1, vuln-type os/library) 모두 그대로.
+- **`.github/workflows/ci.yml` image-scan hard-fail 복원 — 시도 후 보류**:
+  - 첫 푸시(da95d72): Trivy step 의 step-level `continue-on-error: true` 제거. Hard gate 복원.
+  - **CI 첫 결과**: 6/7 PASS, **image-scan FAIL** — Trivy 가 33 HIGH+CRITICAL 탐지(Total: HIGH 32 / CRITICAL 1).
+    - **OS (Debian) 7건** (HIGH 6 / CRITICAL 1) — `libgnutls30 3.7.9-2+deb12u3` (CVE-2025-32988/32990 등). python:3.12.7-slim base 의 debian-bookworm 패키지. Fix = apt-get upgrade 또는 새 base.
+    - **Java (jar) 3건** (HIGH 3) — `org.msgpack:msgpack-core 0.9.10 → 0.9.11` (CVE-2026-21452 DoS) 등. ORT 85.0.0 번들 fat-zip 안의 transitive jar.
+    - **Node.js (node-pkg) 23건** (HIGH 23) — `cross-spawn 7.0.3 → 7.0.5/6.0.6` (CVE-2024-21538 ReDoS) 등. cdxgen 11.11.0 번들 npm deps.
+    - **모두 본 PR 의 Python deps 와 무관**. security-reviewer 의 [Medium] 경고("worker 이미지의 비-Python 레이어가 추후 advisory 발표 시 main 을 즉시 red 로 만들 수 있음") 가 정확히 적중.
+  - **두 번째 푸시 (예정 commit)**: ci.yml 변경 revert. soft-fail 상태(d5c1052 + e57a894)로 되돌림. 본 PR 은 **Python deps bump only**.
+  - **hard-fail 복원은 별도 follow-up chore PR 로 분리**:
+    - apt-get upgrade 추가 (또는 python:3.12-slim 의 patched 버전으로 base bump) → OS 7건 해결
+    - cdxgen 11.11.0 → latest stable bump → Node.js 23건 중 다수 해결
+    - ORT 85.0.0 → latest stable bump → Java 3건 해결
+    - 잔여 CVE 가 fixed-version 없거나 우리 경로에 무관하면 `.trivyignore` 로 명시 화이트리스트
+    - 그 후에 Trivy step 의 `continue-on-error: true` 제거 → hard-fail 복원
 - **Producer-Reviewer 1라운드** (security-reviewer): 평결 = **CONDITIONAL PASS** (Critical 0 / High 0 / Medium 1 / Low 2 / Info 1). 머지 차단 항목 없음 — 조건은 "재빌드된 worker 이미지의 Trivy 스캔 통과"이며, 본 PR 의 image-scan CI 잡 자체가 그 검증 채널.
   - **[Medium] worker 이미지의 비-Python 레이어 (cdxgen/ORT/Trivy/JRE/Node) 가 추후 advisory 발표 시 main 을 즉시 red 로 만들 수 있음** — image-scan hard-fail 의 정책 비용. follow-up: 야간 Trivy soft-fail 잡 추가 검토.
   - **[Low] python-jose 는 upstream 유지보수 종료 상태** (3.5.0 이 마지막 릴리즈, 2025-01) — Phase 8 hardening 시 PyJWT/authlib 마이그레이션 권고. 우리 코드는 `algorithms=[JWT_ALGORITHM]` (HS256) 핀이라 CVE-2024-33663 미도달.
@@ -29,6 +39,7 @@
 
 ## 2. 결정 사항 / 변경된 가정
 
+- **본 PR 스코프 = Python deps bump only** (image-scan hard-fail 복원 분리). 이유: Trivy 가 비-Python 레이어 33건을 탐지했고, 이를 한 PR 에서 다 처리하면 1-2시간 예상이 무너짐. Python deps remediation 은 깨끗한 승이므로 단독으로 머지 가능. hard-fail 복원은 다음 chore PR 의 책임.
 - **fastapi 동시 bump 채택**. 최소-변경 후보 0.120.4 선택 (0.115.x→0.119.x 라인은 starlette<0.49.0 핀해서 차단). 0.136.1(latest) 도 가능하지만 blast radius 가 크므로 0.120.4 가 minimal.
 - **starlette / pyasn1 명시 핀**. 둘 다 transitive 였지만 직접 핀해서 Trivy / pip-audit 가 CVE 패치 버전을 결정적으로 검증하도록 함. 향후 fastapi 또는 python-jose bump 시 자동 상위 핀이 적용되는 위험 회피.
 - **로컬 worker 이미지 빌드 + 풀 pytest 회귀 SKIP — CI 가 검증 채널**.
@@ -62,7 +73,13 @@
 
 ## 4. 후속 backlog
 
-- **CI image-scan 잡 green 확인** — 본 PR 푸시 직후 CI watch. fail 시 위 §2 의 3 분기로 진단.
+- **chore PR (즉시 후속, 우선순위 ↑) — worker 이미지 bundled-tool bump + image-scan hard-fail 복원**:
+  - apt-get upgrade 추가 또는 base 이미지 bump (Dockerfile.worker `FROM python:3.12.7-slim`) — OS 7건 해결.
+  - cdxgen 11.11.0 → latest stable — Node.js 23건 중 다수 해결.
+  - ORT 85.0.0 → latest stable — Java 3건 해결.
+  - 잔여 CVE 는 `.trivyignore` 로 명시 화이트리스트(no-fix 만, fixed-but-not-applicable 은 절대 화이트리스트 금지).
+  - 그 후 Trivy step `continue-on-error: true` 제거 → hard-fail 복원.
+  - devops-engineer + security-reviewer Producer-Reviewer 라운드.
 - **PR #9 follow-up backlog 7개 (L-1~L-4 / I-1~I-3)** — 본 세션 미처리, 별도 chore PR.
   - L-1 / L-2 / L-4 (DoS 류) 우선.
   - L-3 (멀티 worker 전 Redis-backed WS connection counter) 는 멀티 replica 활성화 직전.
