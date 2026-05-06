@@ -90,12 +90,24 @@ def test_project_create_accepts_null_git_url() -> None:
         "http://gitlab.example.com/team/repo",
         "ssh://git@github.com/foo/bar.git",
         "git@github.com:foo/bar.git",
-        "git+ssh://git@host/x/y",
+        "git+ssh://git@host.example.com/x/y",
         "git://example.com/repo",
     ],
 )
-def test_project_create_accepts_well_formed_git_url(url: str) -> None:
+def test_project_create_accepts_well_formed_git_url(
+    url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PR #8 SSRF guard does a real DNS resolution of git_url hosts, so we
+    monkeypatch getaddrinfo to keep these unit cases hermetic. The IP we
+    return must be a public-routable one — RFC 1918/loopback would now be
+    rejected by the same guard."""
+    import socket as _socket
     from schemas.scan import ProjectCreate
+
+    monkeypatch.setattr(
+        "core.url_guard.socket.getaddrinfo",
+        lambda host, port: [(_socket.AF_INET, 0, 0, "", ("140.82.121.4", 0))],
+    )
 
     project = ProjectCreate(team_id=uuid.uuid4(), name="n", slug="s", git_url=url)
     assert project.git_url == url.strip()

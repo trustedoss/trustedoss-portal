@@ -25,6 +25,32 @@ if str(BACKEND_ROOT) not in sys.path:
 
 
 @pytest.fixture(autouse=True)
+def _stub_enqueue_scan(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace `tasks.enqueue_scan` with a deterministic stub by default.
+
+    PR #8 wired `services.scan_service.trigger_scan` to call
+    `tasks.enqueue_scan(scan)`, which submits a real Celery task. With a
+    healthy broker + worker the worker picks the task up and flips
+    `scan.status` from 'queued' to 'running' before the test reads the
+    response — racing the assertions in PR #7's pre-Celery contract.
+
+    The stub returns a static UUID-shaped string. Tests that need to
+    observe the real dispatcher (`tests/integration/scan/test_trigger_scan_enqueues_celery.py`)
+    re-monkeypatch `services.scan_service.enqueue_scan` themselves; this
+    fixture only affects the default path.
+    """
+    try:
+        import services.scan_service as scan_service_mod
+    except Exception:  # pragma: no cover - tests that don't import service layer
+        return
+    monkeypatch.setattr(
+        scan_service_mod,
+        "enqueue_scan",
+        lambda scan: "00000000-0000-0000-0000-000000000001",
+    )
+
+
+@pytest.fixture(autouse=True)
 def _reset_rate_limiter() -> None:
     """Clear slowapi's in-memory storage so rate-limit state never leaks."""
     try:

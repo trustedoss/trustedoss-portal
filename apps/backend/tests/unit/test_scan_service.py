@@ -112,7 +112,10 @@ async def test_trigger_scan_persists_queued_row_and_writes_audit_log(
     assert scan.status == "queued"
     assert scan.progress_percent == 0
     assert scan.kind == "source"
-    assert scan.celery_task_id is None  # PR #7 contract: no Celery enqueue
+    # PR #8 contract: trigger_scan now enqueues via tasks.enqueue_scan and
+    # records the returned task id (UUID string from Celery).
+    assert isinstance(scan.celery_task_id, str)
+    assert len(scan.celery_task_id) > 0
     assert scan.requested_by_user_id == user.id
     assert scan.scan_metadata == {"git_ref": "main"}
 
