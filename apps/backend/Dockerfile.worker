@@ -102,10 +102,27 @@ ENV JAVA_HOME=/usr/lib/jvm/java-21 \
 # We pin the deb major (20.x) via the NodeSource distribution and the patch
 # via apt-mark hold — NodeSource repos only carry the latest in the 20.x
 # line, but pinning here documents intent and lets us bump deliberately.
-ENV NODE_MAJOR=20
+#
+# npm self-upgrade to 11.13.0 (deterministic security patching of the npm
+# CLI bundled with Node 20.x): NodeSource Node.js 20.18.x ships with npm
+# 10.8.2, whose bundled deps (cross-spawn 7.0.3, glob 10.4.2, minimatch
+# 9.0.5, tar 6.2.1) carry 11 HIGH Trivy findings under
+# usr/lib/node_modules/npm/node_modules/* (CVE-2024-21538 cross-spawn ReDoS
+# + CVE-2025-64756 glob CmdInjection + 3 minimatch DoS + 6 tar
+# arbitrary-write/path-traversal). npm 11.13.0 drops cross-spawn entirely
+# and pulls bundled tar 7.5.13 / glob 13.0.6 / minimatch 10.2.5, all above
+# the highest fixed-version Trivy reports. The npm CLI is only invoked at
+# image-build time (this stage's `npm install -g cdxgen`) — the Celery
+# worker runtime never shells to npm — but Trivy scans the whole image
+# filesystem and the npm bundle is on it, so the only way to keep the
+# image-scan gate green without `.trivyignore` entries for tooling-not-
+# reached-at-runtime is to ship a patched npm.
+ENV NODE_MAJOR=20 \
+    NPM_VERSION=11.13.0
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
+    && npm install -g "npm@${NPM_VERSION}" \
     && node --version \
     && npm --version
 
@@ -115,10 +132,35 @@ RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
 # the cross-spawn 7.0.3 chain underneath) — that's the ~23 HIGH npm CVEs
 # Trivy flagged on cdxgen 11.11.0 (CVE-2024-21538 cross-spawn ReDoS et al.).
 # 12.x still supports Node 20 LTS via `engines.node: ^20 || ^22 || ^24 || ^25`.
-# We install globally so it lands on PATH for the celery worker. --omit=dev
-# keeps the image lean (drops biome/poku/sinon/typescript dev deps).
+# We install globally so it lands on PATH for the celery worker.
+#
+# Install flags:
+#   --omit=dev      drops devDependencies (biome / poku / sinon / typescript)
+#                   so the image stays lean.
+#   --omit=optional drops optionalDependencies — specifically
+#                   `@cdxgen/cdxgen-plugins-bin` and its per-arch sibling
+#                   packages (`@cdxgen/cdxgen-plugins-bin-linux-amd64` etc.).
+#                   That bundle ships vendored Go binaries (osv-scanner,
+#                   cdx-audit, sourcekitten, …) which Trivy then scans as
+#                   gobinary surface — the previous build flagged 12 HIGH
+#                   + 1 CRITICAL there (grpc CVE-2026-33186, docker/cli,
+#                   moby/buildkit, otel, sigstore-timestamp, go-jose, …).
+#                   Our cdxgen invocation in apps/backend/integrations/
+#                   cdxgen.py only passes `-r -o <path> --spec-version 1.5
+#                   <src>` — we never call any plugin. OSV vulnerability
+#                   matching is owned by Dependency-Track; image SAST is
+#                   not in scope for the worker. Dropping the bundle is
+#                   therefore safe and removes the entire gobinary block
+#                   from the Trivy report.
+#                   IMPORTANT: --omit=dev (devDependencies) and
+#                   --omit=optional (optionalDependencies) are independent
+#                   npm-config keys. If a future change needs cdxgen's
+#                   bundled scanners (e.g. wiring osv-scanner into the
+#                   pipeline), drop --omit=optional and add corresponding
+#                   .trivyignore entries with reach analysis — do not
+#                   rollback the gate.
 ENV CDXGEN_VERSION=12.3.3
-RUN npm install -g --omit=dev "@cyclonedx/cdxgen@${CDXGEN_VERSION}" \
+RUN npm install -g --omit=dev --omit=optional "@cyclonedx/cdxgen@${CDXGEN_VERSION}" \
     && cdxgen --version
 
 # ---- Trivy 0.70.0 (Apache-2.0). --------------------------------------------

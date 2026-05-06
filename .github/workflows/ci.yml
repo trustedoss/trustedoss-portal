@@ -235,13 +235,24 @@ jobs:
     # them by:
     #   1. apt-get upgrade -y in both Dockerfile.worker stages
     #      → libgnutls30 / Debian OS 7건.
-    #   2. cdxgen 11.11.0 → 12.3.3 (drops cacache / cross-spawn chain)
-    #      → Node.js 23건.
-    #   3. ORT 85.0.0 retained (latest stable; no newer release at the
-    #      time of writing — the bundled msgpack-core is upstream-known
-    #      but ORT 85 is still the patched line). If Trivy keeps flagging
-    #      the 3 java jars after this PR, follow-up = .trivyignore with
-    #      no-fix justifications, not soft-fail rollback.
+    #   2. cdxgen 11.11.0 → 12.3.3 with --omit=optional (drops the
+    #      @cdxgen/cdxgen-plugins-bin vendored Go binary bundle that
+    #      surfaced 12 HIGH + 1 CRITICAL gobinary findings, including
+    #      grpc CVE-2026-33186) → 12 gobinary findings.
+    #   3. npm self-upgrade to 11.13.0 inside the Node 20.x install
+    #      step (NodeSource ships npm 10.8.2 with cross-spawn 7.0.3 /
+    #      tar 6.2.1 / glob 10.4.2 / minimatch 9.0.5 — npm 11.13.0
+    #      drops cross-spawn and bumps tar/glob/minimatch above the
+    #      highest fixed version Trivy reports) → 11 node-pkg findings.
+    #   4. ORT 85.0.0 retained (latest stable). The 3 residual Java
+    #      HIGH findings (json-smart, bcprov-jdk18on inside jruby-
+    #      stdlib, msgpack-core) are upstream-fixed in newer jar
+    #      versions but no patched ORT release ships them yet. They
+    #      are listed in .trivyignore at the workspace root with per-
+    #      CVE reach analysis (all UNREACHED under our `ort evaluate
+    #      --output-formats JSON` invocation; see apps/backend/
+    #      integrations/ort.py:128-139). Re-evaluate every 180 days
+    #      or when ORT publishes a release.
     steps:
       - uses: actions/checkout@v4
 
@@ -271,6 +282,10 @@ jobs:
         # CRITICAL OS-or-library CVE with a fixed version blocks the merge.
         # `ignore-unfixed: true` keeps us from chasing CVEs upstream hasn't
         # patched yet — those remain visible in the table for triage.
+        # `trivyignores: ./.trivyignore` is explicit (the action also
+        # auto-detects .trivyignore at the build context root, but pinning
+        # the path documents intent and survives future action upgrades
+        # that might change the discovery default).
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: trustedoss/backend-worker:dev
@@ -279,6 +294,7 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
           vuln-type: os,library
+          trivyignores: ./.trivyignore
 
   # -------------------------------------------------------------------------
   # 5) Frontend bundle audit — production build must not contain dev-only
