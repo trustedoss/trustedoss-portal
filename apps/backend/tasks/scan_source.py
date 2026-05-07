@@ -35,6 +35,7 @@ Workspace:
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import time
@@ -536,6 +537,67 @@ def _persist_artifact(scan_uuid: uuid.UUID, *, kind: str, path: Path) -> None:
 _PREP_STEP_TIMEOUT_SECONDS = 300
 
 
+# Allowlist of env vars passed to prep subprocesses. Worker secrets
+# (DT_API_KEY / SECRET_KEY / DATABASE_URL credentials / *_WEBHOOK_URL)
+# must NOT inherit into `bundle lock` / `cargo generate-lockfile` /
+# `go mod tidy` / `dotnet restore`: those resolvers can fetch from
+# attacker-controlled sources (a hostile NuGet feed via nuget.config,
+# or a Go `replace` directive) inside a cloned repo, and any inherited
+# env then becomes a covert exfil channel through telemetry / crash
+# reports / DNS lookups in their error paths. See security-reviewer
+# Medium #1 (chore PR #4).
+_PREP_ENV_ALLOWLIST = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "TZ",
+        # Go
+        "GOFLAGS",
+        "GOPROXY",
+        "GOSUMDB",
+        "GOMODCACHE",
+        "GOCACHE",
+        # Cargo / Rust
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        # .NET
+        "DOTNET_CLI_TELEMETRY_OPTOUT",
+        "DOTNET_NOLOGO",
+        "NUGET_PACKAGES",
+        # Java / Maven / Gradle
+        "JAVA_HOME",
+        "MAVEN_OPTS",
+        "GRADLE_USER_HOME",
+        # Ruby / bundler
+        "BUNDLE_PATH",
+        "BUNDLE_USER_HOME",
+        "GEM_HOME",
+    }
+)
+
+
+def _scrubbed_env() -> dict[str, str]:
+    """Build a minimal env dict for prep subprocesses.
+
+    Only allowlisted keys are inherited from the worker process. We
+    seed a few sensible defaults (HOME, LANG, .NET telemetry-opt-out)
+    so the resolvers don't fall back to localized behaviour or
+    unknown-host telemetry when the worker image leaves them unset.
+    """
+    base: dict[str, str] = {}
+    for key in _PREP_ENV_ALLOWLIST:
+        value = os.environ.get(key)
+        if value is not None:
+            base[key] = value
+    base.setdefault("HOME", "/tmp")
+    base.setdefault("LANG", "C.UTF-8")
+    base.setdefault("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
+    base.setdefault("DOTNET_NOLOGO", "1")
+    return base
+
+
 def _prepare_for_cdxgen(*, source_dir: Path, scan_uuid: uuid.UUID) -> None:
     """Run language-specific lockfile / dependency-resolution steps before
     handing the workspace to cdxgen.
@@ -597,6 +659,12 @@ def _run_prep(
     pipeline. There is no shell interpolation. Bandit's S603 warning
     ("subprocess call - check for execution of untrusted input") is a
     false positive for this controlled invocation.
+
+    The subprocess receives a scrubbed env (``_scrubbed_env``) — worker
+    secrets like ``DT_API_KEY`` / ``SECRET_KEY`` / ``DATABASE_URL`` /
+    ``*_WEBHOOK_URL`` are not inherited, so a hostile clone cannot use
+    a malicious NuGet feed or Go ``replace`` directive to exfiltrate
+    them through resolver telemetry.
     """
     try:
         result = subprocess.run(  # noqa: S603 — see docstring
@@ -606,6 +674,7 @@ def _run_prep(
             text=True,
             timeout=timeout,
             check=False,
+            env=_scrubbed_env(),
         )
         log.info(
             "prep_finished",
