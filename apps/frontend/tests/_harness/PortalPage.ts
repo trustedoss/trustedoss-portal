@@ -13,6 +13,11 @@
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
+import { AdminAuditHarness } from "./AdminAuditHarness";
+import { AdminDiskHarness } from "./AdminDiskHarness";
+import { AdminDTHarness } from "./AdminDTHarness";
+import { AdminHealthHarness } from "./AdminHealthHarness";
+import { AdminScansHarness } from "./AdminScansHarness";
 import { AdminTeamsHarness } from "./AdminTeamsHarness";
 import { AdminUsersHarness } from "./AdminUsersHarness";
 
@@ -790,6 +795,42 @@ export class PortalPage {
   /** Sibling of {@link gotoAdminUsers} for the ``/admin/teams`` surface. */
   async gotoAdminTeams(): Promise<AdminTeamsHarness> {
     const harness = new AdminTeamsHarness(this.page, this.baseUrl);
+    await harness.goto();
+    return harness;
+  }
+
+  // ───── PR #14 — Admin operational dashboards (DT/Scans/Disk/Audit/Health)
+  /** Navigate to ``/admin/dt`` and return the {@link AdminDTHarness}. */
+  async gotoAdminDT(): Promise<AdminDTHarness> {
+    const harness = new AdminDTHarness(this.page, this.baseUrl);
+    await harness.goto();
+    return harness;
+  }
+
+  /** Navigate to ``/admin/scans`` and return the {@link AdminScansHarness}. */
+  async gotoAdminScans(): Promise<AdminScansHarness> {
+    const harness = new AdminScansHarness(this.page, this.baseUrl);
+    await harness.goto();
+    return harness;
+  }
+
+  /** Navigate to ``/admin/disk`` and return the {@link AdminDiskHarness}. */
+  async gotoAdminDisk(): Promise<AdminDiskHarness> {
+    const harness = new AdminDiskHarness(this.page, this.baseUrl);
+    await harness.goto();
+    return harness;
+  }
+
+  /** Navigate to ``/admin/audit`` and return the {@link AdminAuditHarness}. */
+  async gotoAdminAudit(): Promise<AdminAuditHarness> {
+    const harness = new AdminAuditHarness(this.page, this.baseUrl);
+    await harness.goto();
+    return harness;
+  }
+
+  /** Navigate to ``/admin/health`` and return the {@link AdminHealthHarness}. */
+  async gotoAdminHealth(): Promise<AdminHealthHarness> {
+    const harness = new AdminHealthHarness(this.page, this.baseUrl);
     await harness.goto();
     return harness;
   }
