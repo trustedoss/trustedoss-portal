@@ -38,6 +38,7 @@ All 4xx/5xx responses are RFC 7807 ``application/problem+json``.
 from __future__ import annotations
 
 import re
+import urllib.parse
 import uuid
 
 import structlog
@@ -46,6 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import get_db
 from core.errors import problem_response
+from core.ratelimit import limiter
 from core.security import CurrentUser, require_role
 from schemas.obligation_detail import (
     AffectedComponentByObligation,
@@ -182,11 +184,14 @@ async def get_obligation_endpoint(
         license_reference_url=payload["license_reference_url"],
         kind=payload["kind"],
         text=payload["text"],
+        text_truncated=payload["text_truncated"],
         link=payload["link"],
         affected_components=[
             AffectedComponentByObligation.model_validate(c)
             for c in payload["affected_components"]
         ],
+        affected_components_truncated=payload["affected_components_truncated"],
+        affected_components_total=payload["affected_components_total"],
         created_at=payload["created_at"],
         updated_at=payload["updated_at"],
     )
@@ -214,6 +219,30 @@ def _safe_filename_token(name: str) -> str:
     return token or "project"
 
 
+def _format_content_disposition(project_name: str, ext: str) -> str:
+    """Build an RFC 6266-compliant ``Content-Disposition: attachment`` value.
+
+    Emits both the ASCII ``filename=`` fallback (for legacy clients) and the
+    UTF-8 ``filename*=UTF-8''…`` extended parameter (for browsers that
+    understand it). The two parameters carry the same logical name; the
+    ASCII version is sanitised with ``_safe_filename_token`` so a filesystem
+    can persist it without quoting risks, while the UTF-8 version preserves
+    the original project name (including non-ASCII characters) percent-
+    encoded so the user sees a readable name in their downloads.
+    """
+    token = _safe_filename_token(project_name)
+    ascii_filename = f"NOTICE-{token}.{ext}"
+    utf8_full = f"NOTICE-{project_name}.{ext}"
+    # RFC 5987 percent-encoding — quote() with empty `safe=` so even '/'
+    # and ',' are escaped. The encoded value never contains characters
+    # the header parser would treat specially.
+    utf8_encoded = urllib.parse.quote(utf8_full, safe="")
+    return (
+        f'attachment; filename="{ascii_filename}"; '
+        f"filename*=UTF-8''{utf8_encoded}"
+    )
+
+
 @router.get(
     "/projects/{project_id}/notice",
     summary="Compose a NOTICE attribution body for the project's latest scan",
@@ -231,8 +260,13 @@ def _safe_filename_token(name: str) -> str:
         },
         403: {"description": "Caller is not a member of the project's team."},
         404: {"description": "Project does not exist."},
+        429: {
+            "description": "Rate limit exceeded for this client IP.",
+            "content": {"application/problem+json": {}},
+        },
     },
 )
+@limiter.limit("10/minute")
 async def get_project_notice_endpoint(
     request: Request,
     project_id: uuid.UUID,
@@ -274,9 +308,8 @@ async def get_project_notice_endpoint(
     }
     if download:
         ext = "md" if fmt == "markdown" else "txt"
-        token = _safe_filename_token(payload["project_name"])
-        headers["Content-Disposition"] = (
-            f'attachment; filename="NOTICE-{token}.{ext}"'
+        headers["Content-Disposition"] = _format_content_disposition(
+            payload["project_name"], ext
         )
     return Response(
         content=payload["body"],
@@ -284,6 +317,21 @@ async def get_project_notice_endpoint(
         media_type=media_type,
         headers=headers,
     )
+
+
+# slowapi's `@limiter.limit` wraps the endpoint with functools.wraps, which
+# preserves __annotations__ but inherits slowapi's own module as the
+# wrapper's __globals__. With `from __future__ import annotations` enabled,
+# FastAPI calls `typing.get_type_hints()` on the wrapper to resolve string
+# annotations and fails to find names like `uuid` and `AsyncSession` —
+# Pydantic raises "TypeAdapter is not fully defined" and the endpoint
+# returns 500 on every request. Mirror auth.py's fix by patching the names
+# the wrapper needs into its `__globals__` (we can't reassign __globals__
+# itself — it's read-only — but mutating the dict in place works).
+for _name in ("uuid", "AsyncSession", "Request", "Response", "Depends", "Query", "CurrentUser"):
+    if _name in globals():
+        get_project_notice_endpoint.__globals__.setdefault(_name, globals()[_name])
+del _name
 
 
 __all__ = ["router"]
