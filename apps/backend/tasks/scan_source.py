@@ -191,6 +191,7 @@ def _run_pipeline(
         scan_uuid=scan_uuid,
         workspace=workspace,
         git_url=git_url,
+        mock_only=False,
     )
 
     # Stage 3 — cdxgen.
@@ -206,13 +207,24 @@ def _run_pipeline(
     )
 
     # Stage 4 — ORT evaluate.
+    # UAT patch (2026-05-07): ORT integration is currently broken — it
+    # passes the cdxgen CycloneDX SBOM to `ort evaluate --ort-file ...`
+    # which expects an OrtResult JSON produced by `ort analyze`. The
+    # KotlinInvalidNullException at parse time aborts every scan. Until
+    # the integration is fixed (separate `ort analyze` stage feeding the
+    # evaluator), wrap the call in a try/except so the rest of the
+    # pipeline (component + license persistence, DT upload, CVE
+    # matching) still runs.
     _set_stage(scan_uuid, "ort")
-    ort_result = ort_adapter.run_ort(
-        source_dir=source_dir,
-        sbom_path=cdxgen_result.sbom_path,
-        output_dir=workspace / "ort",
-    )
-    _persist_artifact(scan_uuid, kind="ort_result", path=ort_result.result_path)
+    try:
+        ort_result = ort_adapter.run_ort(
+            source_dir=source_dir,
+            sbom_path=cdxgen_result.sbom_path,
+            output_dir=workspace / "ort",
+        )
+        _persist_artifact(scan_uuid, kind="ort_result", path=ort_result.result_path)
+    except Exception as exc:
+        log.warning("ort_stage_skipped", error=str(exc)[:300])
 
     # Persist the SBOM components (independent of DT availability — this is
     # the cached license + component data the UI shows when DT is down).
@@ -497,7 +509,20 @@ def _persist_components(
     scan_uuid: uuid.UUID,
     sbom: dict[str, Any],
 ) -> None:
-    """Upsert components / component versions / scan components from cdxgen."""
+    """Upsert components / component versions / scan components / license
+    findings from a cdxgen CycloneDX SBOM.
+
+    UAT patch (2026-05-07): the original implementation only persisted the
+    component graph and left ``license_findings`` empty (the original design
+    relied on ORT's evaluator output, but the ORT integration is broken —
+    see scan_source._run_pipeline). cdxgen does emit each component's
+    declared SPDX license inside ``components[].licenses``, so we now also
+    upsert ``licenses`` + ``license_findings`` rows here. License kind is
+    fixed to ``"declared"`` because cdxgen's data is package-metadata-derived
+    (npm `license`, maven `<licenses>`, gradle resolved POM); ORT would
+    additionally emit ``concluded`` / ``detected`` after running the license
+    scanner, which we'll wire when the analyzer stage is fixed.
+    """
     components = sbom.get("components", []) or []
     for raw in components:
         if not isinstance(raw, dict):
@@ -536,6 +561,152 @@ def _persist_components(
             raw_data=guarded_raw,
         )
         session.add(scan_component)
+
+        _persist_component_licenses(
+            session,
+            scan_uuid=scan_uuid,
+            component_version_id=component_version.id,
+            cdxgen_component=raw,
+        )
+
+
+# ---------------------------------------------------------------------------
+# License extraction (cdxgen → license_findings)
+# ---------------------------------------------------------------------------
+
+
+# CycloneDX `licenses[].license.id` (SPDX) or `licenses[].expression` is what
+# we read. Permissive defaults — the entries are just the well-known SPDX
+# identifiers we expect to see most often. Anything else lands in `unknown`.
+_LICENSE_CATEGORY_DEFAULTS: dict[str, str] = {
+    # Allowed
+    "MIT": "allowed",
+    "Apache-2.0": "allowed",
+    "BSD-2-Clause": "allowed",
+    "BSD-3-Clause": "allowed",
+    "ISC": "allowed",
+    "Unlicense": "allowed",
+    "CC0-1.0": "allowed",
+    "0BSD": "allowed",
+    "Zlib": "allowed",
+    "WTFPL": "allowed",
+    "Python-2.0": "allowed",
+    # Conditional
+    "LGPL-2.0-only": "conditional",
+    "LGPL-2.0-or-later": "conditional",
+    "LGPL-2.1-only": "conditional",
+    "LGPL-2.1-or-later": "conditional",
+    "LGPL-3.0-only": "conditional",
+    "LGPL-3.0-or-later": "conditional",
+    "MPL-1.1": "conditional",
+    "MPL-2.0": "conditional",
+    "EPL-1.0": "conditional",
+    "EPL-2.0": "conditional",
+    "CDDL-1.0": "conditional",
+    "CDDL-1.1": "conditional",
+    "Apache-1.1": "conditional",
+    # Forbidden
+    "GPL-2.0-only": "forbidden",
+    "GPL-2.0-or-later": "forbidden",
+    "GPL-3.0-only": "forbidden",
+    "GPL-3.0-or-later": "forbidden",
+    "AGPL-3.0-only": "forbidden",
+    "AGPL-3.0-or-later": "forbidden",
+    "SSPL-1.0": "forbidden",
+    "BUSL-1.1": "forbidden",
+}
+
+
+def _classify_license_category(spdx_id: str | None) -> str:
+    if not spdx_id:
+        return "unknown"
+    return _LICENSE_CATEGORY_DEFAULTS.get(spdx_id, "unknown")
+
+
+def _extract_spdx_ids(cdxgen_component: dict[str, Any]) -> list[tuple[str, str | None]]:
+    """Pull (spdx_id, reference_url) tuples out of a cdxgen component entry.
+
+    CycloneDX shapes the ``licenses`` field as a list, where each entry is
+    one of:
+      - ``{"license": {"id": "<spdx>", "url": "<reference>"}}``
+      - ``{"license": {"name": "<free-text>", "url": "<reference>"}}``
+      - ``{"expression": "<spdx-expression>"}``
+
+    We accept the first form (preferred — exact SPDX), accept the third when
+    it parses as a single SPDX id (no AND/OR/WITH), and skip free-text
+    license names — those would require a license-text identifier scanner
+    (ORT or scancode) to map to SPDX, which is out of scope for the cdxgen
+    fast-path.
+    """
+    out: list[tuple[str, str | None]] = []
+    licenses = cdxgen_component.get("licenses") or []
+    if not isinstance(licenses, list):
+        return out
+    for entry in licenses:
+        if not isinstance(entry, dict):
+            continue
+        lic = entry.get("license") or {}
+        if isinstance(lic, dict):
+            spdx = lic.get("id")
+            url = lic.get("url")
+            if isinstance(spdx, str) and spdx:
+                out.append((spdx, url if isinstance(url, str) else None))
+                continue
+        expression = entry.get("expression")
+        if isinstance(expression, str) and expression and not any(
+            kw in expression for kw in (" AND ", " OR ", " WITH ")
+        ):
+            out.append((expression.strip(), None))
+    return out
+
+
+def _get_or_create_license(
+    session: Session,
+    *,
+    spdx_id: str,
+    reference_url: str | None,
+):
+    from models import License as LicenseModel
+
+    existing = session.execute(
+        select(LicenseModel).where(LicenseModel.spdx_id == spdx_id)
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    lic = LicenseModel(
+        spdx_id=spdx_id,
+        name=spdx_id,
+        category=_classify_license_category(spdx_id),
+        reference_url=reference_url,
+    )
+    session.add(lic)
+    session.flush()
+    return lic
+
+
+def _persist_component_licenses(
+    session: Session,
+    *,
+    scan_uuid: uuid.UUID,
+    component_version_id: uuid.UUID,
+    cdxgen_component: dict[str, Any],
+) -> None:
+    """For each SPDX license on the cdxgen component, upsert a License row
+    and emit a ``declared`` LicenseFinding tying it to this scan."""
+    spdx_pairs = _extract_spdx_ids(cdxgen_component)
+    for spdx_id, ref_url in spdx_pairs:
+        license_row = _get_or_create_license(
+            session, spdx_id=spdx_id, reference_url=ref_url
+        )
+        finding = LicenseFinding(
+            scan_id=scan_uuid,
+            component_version_id=component_version_id,
+            license_id=license_row.id,
+            kind="declared",
+            source_path=None,
+            raw_data={"source": "cdxgen"},
+        )
+        session.add(finding)
 
 
 def _persist_findings(
