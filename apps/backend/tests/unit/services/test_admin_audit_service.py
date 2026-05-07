@@ -1,0 +1,421 @@
+"""
+Service-layer tests for ``services.admin_audit_service`` — Phase 4 PR #14.
+
+Drives the search + CSV export against a live Postgres (DATABASE_URL) so
+the SQL filter chain — including the JSONB cast + ILIKE — actually runs.
+Mirrors the shape of ``test_admin_user_service.py``.
+
+Coverage:
+  - search filters: actor / target_table / action / from / to / q
+  - pagination envelope (page / page_size / has_more / total)
+  - actor_email JOIN: deleted-actor row still renders
+  - CSV export: header line + data rows + 100k cap (mocked count)
+  - adversarial parametrize on the ``q`` and ``action`` inputs
+"""
+
+from __future__ import annotations
+
+import csv as _csv
+import io
+import os
+import subprocess
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from models import AuditLog
+from schemas.admin_ops import AuditSearchQuery
+from tests._helpers import make_user, principal_for, unique_suffix
+
+BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+
+pytestmark = pytest.mark.integration
+
+
+def _require_database_url() -> str:
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        pytest.skip("DATABASE_URL not set — skip admin_audit_service tests")
+    return url
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _migrate_once() -> None:
+    _require_database_url()
+    result = subprocess.run(
+        ["alembic", "upgrade", "head"],
+        cwd=BACKEND_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode != 0:
+        pytest.skip(
+            f"alembic upgrade head failed; admin_audit_service tests cannot run\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+
+
+@pytest.fixture
+async def db_session() -> AsyncIterator[AsyncSession]:
+    from core.audit import install_audit_listeners
+    from core.config import database_url
+
+    engine = create_async_engine(database_url(), pool_pre_ping=True, future=True)
+    factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    install_audit_listeners(factory)
+    async with factory() as session:
+        yield session
+    await engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+async def _seed_audit_row(
+    session: AsyncSession,
+    *,
+    actor_user_id: object | None = None,
+    target_table: str = "projects",
+    action: str = "create",
+    diff: dict | None = None,
+    created_at: datetime | None = None,
+) -> AuditLog:
+    """Insert a single audit_logs row directly (the listener already handles real flushes)."""
+    row = AuditLog(
+        actor_user_id=actor_user_id,
+        team_id=None,
+        target_table=target_table,
+        target_id=None,
+        action=action,
+        request_id=f"req-{unique_suffix()}",
+        diff=diff,
+    )
+    if created_at is not None:
+        row.created_at = created_at
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return row
+
+
+# ---------------------------------------------------------------------------
+# search_audit
+# ---------------------------------------------------------------------------
+
+
+async def test_search_audit_returns_envelope_with_total(db_session: AsyncSession) -> None:
+    from services.admin_audit_service import search_audit
+
+    admin = await make_user(db_session, is_superuser=True)
+    actor = principal_for(admin, role="super_admin")
+
+    target_action = f"act-{unique_suffix()}"
+    await _seed_audit_row(db_session, action=target_action)
+    await _seed_audit_row(db_session, action=target_action)
+
+    page = await search_audit(
+        db_session,
+        actor=actor,
+        query=AuditSearchQuery(action=target_action, page=1, page_size=10),
+    )
+    assert page.total == 2
+    assert page.page == 1
+    assert page.page_size == 10
+    assert page.has_more is False
+    assert all(item.action == target_action for item in page.items)
+
+
+async def test_search_audit_filters_by_actor_user_id(db_session: AsyncSession) -> None:
+    from services.admin_audit_service import search_audit
+
+    admin = await make_user(db_session, is_superuser=True)
+    other_actor = await make_user(db_session)
+    actor = principal_for(admin, role="super_admin")
+
+    target_action = f"act-{unique_suffix()}"
+    await _seed_audit_row(db_session, actor_user_id=admin.id, action=target_action)
+    await _seed_audit_row(db_session, actor_user_id=other_actor.id, action=target_action)
+
+    page = await search_audit(
+        db_session,
+        actor=actor,
+        query=AuditSearchQuery(actor_user_id=admin.id, action=target_action),
+    )
+    assert page.total == 1
+    assert page.items[0].actor_user_id == admin.id
+    assert page.items[0].actor_email == admin.email
+
+
+async def test_search_audit_filters_by_target_table(db_session: AsyncSession) -> None:
+    from services.admin_audit_service import search_audit
+
+    admin = await make_user(db_session, is_superuser=True)
+    actor = principal_for(admin, role="super_admin")
+
+    target_action = f"act-{unique_suffix()}"
+    await _seed_audit_row(db_session, target_table="projects", action=target_action)
+    await _seed_audit_row(db_session, target_table="users", action=target_action)
+
+    page = await search_audit(
+        db_session,
+        actor=actor,
+        query=AuditSearchQuery(target_table="projects", action=target_action),
+    )
+    assert page.total == 1
+    assert page.items[0].target_table == "projects"
+
+
+async def test_search_audit_filters_by_time_window(db_session: AsyncSession) -> None:
+    from services.admin_audit_service import search_audit
+
+    admin = await make_user(db_session, is_superuser=True)
+    actor = principal_for(admin, role="super_admin")
+
+    target_action = f"act-{unique_suffix()}"
+    now = datetime.now(tz=UTC)
+    # Two rows: one inside, one outside the window.
+    inside = await _seed_audit_row(
+        db_session, action=target_action, created_at=now - timedelta(minutes=5)
+    )
+    await _seed_audit_row(
+        db_session, action=target_action, created_at=now - timedelta(days=2)
+    )
+
+    page = await search_audit(
+        db_session,
+        actor=actor,
+        query=AuditSearchQuery.model_validate(
+            {
+                "action": target_action,
+                "from": now - timedelta(hours=1),
+                "to": now,
+            }
+        ),
+    )
+    assert page.total == 1
+    assert page.items[0].id == inside.id
+
+
+async def test_search_audit_jsonb_q_substring_matches_diff(
+    db_session: AsyncSession,
+) -> None:
+    from services.admin_audit_service import search_audit
+
+    admin = await make_user(db_session, is_superuser=True)
+    actor = principal_for(admin, role="super_admin")
+
+    target_action = f"act-{unique_suffix()}"
+    needle = f"needle-{unique_suffix()}"
+    await _seed_audit_row(
+        db_session,
+        action=target_action,
+        diff={"name": f"contains-{needle}-here"},
+    )
+    await _seed_audit_row(
+        db_session, action=target_action, diff={"name": "no-match"}
+    )
+
+    page = await search_audit(
+        db_session,
+        actor=actor,
+        query=AuditSearchQuery(action=target_action, q=needle),
+    )
+    assert page.total == 1
+    assert needle in str(page.items[0].diff or {})
+
+
+async def test_search_audit_pagination_has_more(db_session: AsyncSession) -> None:
+    from services.admin_audit_service import search_audit
+
+    admin = await make_user(db_session, is_superuser=True)
+    actor = principal_for(admin, role="super_admin")
+
+    target_action = f"act-{unique_suffix()}"
+    for _ in range(5):
+        await _seed_audit_row(db_session, action=target_action)
+
+    page = await search_audit(
+        db_session,
+        actor=actor,
+        query=AuditSearchQuery(action=target_action, page=1, page_size=2),
+    )
+    assert page.total == 5
+    assert page.has_more is True
+    assert len(page.items) == 2
+
+
+# ---------------------------------------------------------------------------
+# stream_audit_csv
+# ---------------------------------------------------------------------------
+
+
+async def test_stream_audit_csv_yields_header_and_rows(db_session: AsyncSession) -> None:
+    from services.admin_audit_service import stream_audit_csv
+
+    admin = await make_user(db_session, is_superuser=True)
+    actor = principal_for(admin, role="super_admin")
+
+    target_action = f"act-{unique_suffix()}"
+    for _ in range(3):
+        await _seed_audit_row(db_session, action=target_action, actor_user_id=admin.id)
+
+    chunks: list[str] = []
+    async for chunk in stream_audit_csv(
+        db_session,
+        actor=actor,
+        query=AuditSearchQuery(action=target_action),
+    ):
+        chunks.append(chunk)
+
+    full = "".join(chunks)
+    reader = _csv.reader(io.StringIO(full))
+    rows = list(reader)
+    # Header + 3 rows.
+    assert len(rows) == 4
+    assert rows[0] == [
+        "created_at",
+        "actor_user_id",
+        "actor_email",
+        "team_id",
+        "target_table",
+        "target_id",
+        "action",
+        "request_id",
+    ]
+    # Body rows carry the actor email (joined from users).
+    assert all(r[2] == admin.email for r in rows[1:])
+
+
+async def test_stream_audit_csv_diff_column_absent(db_session: AsyncSession) -> None:
+    """The CSV export deliberately omits ``diff`` to avoid leaking JSONB shapes."""
+    from services.admin_audit_service import stream_audit_csv
+
+    admin = await make_user(db_session, is_superuser=True)
+    actor = principal_for(admin, role="super_admin")
+
+    target_action = f"act-{unique_suffix()}"
+    secret = f"SECRET-{unique_suffix()}"
+    await _seed_audit_row(db_session, action=target_action, diff={"hidden": secret})
+
+    chunks: list[str] = []
+    async for chunk in stream_audit_csv(
+        db_session,
+        actor=actor,
+        query=AuditSearchQuery(action=target_action),
+    ):
+        chunks.append(chunk)
+
+    full = "".join(chunks)
+    assert "diff" not in full.splitlines()[0]  # no diff column
+    assert secret not in full  # secret never reaches the export
+
+
+async def test_stream_audit_csv_too_large_raises(db_session: AsyncSession) -> None:
+    """Patch the hard cap to 1 and seed 2 rows → AuditExportTooLarge."""
+    import services.admin_audit_service as svc
+
+    admin = await make_user(db_session, is_superuser=True)
+    actor = principal_for(admin, role="super_admin")
+
+    target_action = f"act-{unique_suffix()}"
+    await _seed_audit_row(db_session, action=target_action)
+    await _seed_audit_row(db_session, action=target_action)
+
+    original_cap = svc._CSV_EXPORT_HARD_LIMIT
+    svc._CSV_EXPORT_HARD_LIMIT = 1
+    try:
+        with pytest.raises(svc.AuditExportTooLarge):
+            async for _ in svc.stream_audit_csv(
+                db_session,
+                actor=actor,
+                query=AuditSearchQuery(action=target_action),
+            ):
+                pass
+    finally:
+        svc._CSV_EXPORT_HARD_LIMIT = original_cap
+
+
+# ---------------------------------------------------------------------------
+# Adversarial input — schema-level rejection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "garbage",
+    [
+        "\x00\x00",       # null bytes
+        "line1\r\nLine2", # CRLF injection
+        "x" * 10_000,     # oversized — also caught by max_length
+    ],
+)
+def test_audit_search_query_rejects_control_chars_in_q(garbage: str) -> None:
+    """The schema's ``q`` validator rejects null + CR + LF and the >255 cap rejects oversized."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        AuditSearchQuery(q=garbage)
+
+
+@pytest.mark.parametrize(
+    "garbage",
+    [
+        "\x00",
+        "act\nion",
+        "act\rion",
+    ],
+)
+def test_audit_search_query_rejects_control_chars_in_action(garbage: str) -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        AuditSearchQuery(action=garbage)
+
+
+@pytest.mark.parametrize(
+    "garbage",
+    [
+        "users; DROP TABLE projects",
+        "../etc/passwd",
+        "javascript:alert(1)",
+        "RTL_OVERRIDE‮something",
+    ],
+)
+def test_audit_search_query_rejects_unknown_target_table(garbage: str) -> None:
+    """``target_table`` is a closed Literal — anything outside is a 422."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        AuditSearchQuery(target_table=garbage)  # type: ignore[arg-type]
+
+
+async def test_search_audit_q_with_sql_keywords_is_safe(db_session: AsyncSession) -> None:
+    """SQL keywords in q must be treated as literal substrings, never executed."""
+    from services.admin_audit_service import search_audit
+
+    admin = await make_user(db_session, is_superuser=True)
+    actor = principal_for(admin, role="super_admin")
+
+    target_action = f"act-{unique_suffix()}"
+    # Seed a row whose diff happens to contain a SQL fragment as data.
+    await _seed_audit_row(
+        db_session,
+        action=target_action,
+        diff={"sql_fragment": "SELECT * FROM users WHERE 1=1"},
+    )
+
+    # Query with the SQL keyword as a substring — service must NOT execute it,
+    # just treat it as a literal pattern. The audit row contains it so we expect
+    # exactly 1 match; if the keyword were interpolated unsafely, we'd see DB
+    # errors instead of a clean result.
+    page = await search_audit(
+        db_session,
+        actor=actor,
+        query=AuditSearchQuery(action=target_action, q="SELECT *"),
+    )
+    assert page.total == 1
