@@ -591,7 +591,13 @@ def _scrubbed_env() -> dict[str, str]:
         value = os.environ.get(key)
         if value is not None:
             base[key] = value
-    base.setdefault("HOME", "/tmp")
+    # `/tmp` is fine here — the resolver only needs an existing writable
+    # directory for its config caches (e.g. `~/.cargo`, `~/.dotnet`); it
+    # is NOT used to store secrets, and the workspace itself is wiped at
+    # the end of every scan. The S108 lint is meant for tempfile-creation
+    # patterns where collisions or symlink races matter, neither of which
+    # applies to a HOME hint.
+    base.setdefault("HOME", "/tmp")  # noqa: S108 — see comment above
     base.setdefault("LANG", "C.UTF-8")
     base.setdefault("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
     base.setdefault("DOTNET_NOLOGO", "1")
