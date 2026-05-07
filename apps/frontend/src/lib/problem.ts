@@ -21,6 +21,15 @@ export interface ProblemDetails {
   status: number;
   detail: string;
   instance?: string;
+  /**
+   * RFC 7807 §3.2 allows arbitrary "extension members" alongside the standard
+   * fields. The backend uses snake_case extension fields to surface domain
+   * invariants — e.g. ``last_super_admin_protected: true``,
+   * ``cannot_modify_self: true``, ``team_has_active_scans: true``. We carry
+   * them through verbatim via an index signature so callers don't have to
+   * cast the whole problem to ``Record<string, unknown>`` to read one field.
+   */
+  [extension: string]: unknown;
 }
 
 export class ProblemError extends Error {
@@ -65,7 +74,16 @@ export function parseProblemBody(
     const obj = data as Record<string, unknown>;
     if (typeof obj.title === "string") title = obj.title;
     if (typeof obj.detail === "string") detail = obj.detail;
+    // Carry RFC 7807 extension members (e.g. snake_case domain flags) through
+    // verbatim. The standard fields are normalized below; everything else is
+    // copied as-is so callers can read ``problem.cannot_modify_self`` etc.
+    const RESERVED = new Set(["type", "title", "status", "detail", "instance"]);
+    const extensions: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (!RESERVED.has(key)) extensions[key] = value;
+    }
     problem = {
+      ...extensions,
       type: typeof obj.type === "string" ? obj.type : "about:blank",
       title,
       status: typeof obj.status === "number" ? obj.status : fallback.status,
