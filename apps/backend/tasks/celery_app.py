@@ -34,6 +34,7 @@ _TASK_INCLUDES = [
     "tasks.scan_container",
     "tasks.dt_resync",
     "tasks.dt_orphan_cleaner",
+    "tasks.dt_orphan_cleanup",
     "tasks.dt_health",
 ]
 
