@@ -22,6 +22,7 @@ import subprocess
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -83,7 +84,7 @@ async def _seed_audit_row(
     actor_user_id: object | None = None,
     target_table: str = "projects",
     action: str = "create",
-    diff: dict | None = None,
+    diff: dict[str, Any] | None = None,
     created_at: datetime | None = None,
 ) -> AuditLog:
     """Insert a single audit_logs row directly (the listener already handles real flushes)."""

@@ -207,7 +207,7 @@ def test_orphan_cleanup_empty_uuid_list_scans_dt_and_deletes_orphans(
             self.pages = pages
             self.idx = 0
 
-        def list_projects(self, *, page_size: int = 100, page_number: int = 1) -> list[Any]:  # noqa: ARG002
+        def list_projects(self, **_kw: Any) -> list[Any]:  # type: ignore[override]
             i = self.idx
             self.idx += 1
             return self.pages[i] if i < len(self.pages) else []

@@ -21,6 +21,7 @@ import subprocess
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import text
@@ -86,7 +87,7 @@ class _FakeControl:
     """Records revoke calls so tests can assert behaviour."""
 
     def __init__(self, *, raise_on_revoke: bool = False) -> None:
-        self.calls: list[dict] = []
+        self.calls: list[dict[str, Any]] = []
         self.raise_on_revoke = raise_on_revoke
 
     def revoke(self, task_id: str, *, terminate: bool = False, signal: str | None = None) -> None:

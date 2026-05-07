@@ -239,4 +239,4 @@ def _emit_audit(*, target_uuid: str, action: str) -> None:
         session.commit()
 
 
-__all__ = ["dt_orphan_cleanup_task"]
+__all__ = ["dt_orphan_cleanup_task", "redis"]

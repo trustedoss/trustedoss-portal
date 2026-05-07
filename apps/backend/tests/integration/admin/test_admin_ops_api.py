@@ -227,7 +227,7 @@ async def test_dt_orphan_cleanup_inprogress_returns_409_problem(
         )
     finally:
         rds.delete("dt:admin:orphan_cleanup_lock")
-        rds.close()
+        rds.close()  # type: ignore[no-untyped-call]
 
     assert response.status_code == 409, response.text
     assert response.headers["content-type"].startswith(PROBLEM_JSON)
@@ -259,7 +259,7 @@ async def test_dt_orphans_cleanup_happy_path_enqueues_and_audits(
 
     rds = _redis.Redis.from_url(redis_url(), decode_responses=True)
     rds.delete("dt:admin:orphan_cleanup_lock")
-    rds.close()
+    rds.close()  # type: ignore[no-untyped-call]
 
     with patch("tasks.dt_orphan_cleanup.dt_orphan_cleanup_task") as mock_task:
         mock_task.delay = lambda _uuids: _FakeAsync()
