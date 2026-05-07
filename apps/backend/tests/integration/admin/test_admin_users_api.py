@@ -221,9 +221,21 @@ async def test_list_users_role_query_rejects_adversarial(
     body = response.json()
     assert body["status"] == 422
     assert body["title"] == "Validation Error"
-    # Stack trace / raw value MUST NOT leak — F2 redaction also applies here.
-    if len(raw) >= 6:
-        assert raw not in response.text
+    # F2 redaction pin: the per-error ``input`` field MUST be the sentinel,
+    # never the raw value. We check the error rows directly rather than the
+    # whole body — ``detail`` legitimately contains common English words
+    # ("invalid") that would collide with adversarial payloads as a
+    # substring match.
+    role_rows = [
+        e
+        for e in body["errors"]
+        if isinstance(e, dict) and "role" in tuple(e.get("loc", ()))
+    ]
+    assert role_rows, f"missing role validation row in {body['errors']!r}"
+    for row in role_rows:
+        assert row.get("input") == "<redacted>", (
+            f"raw value leaked under redaction sentinel: {row!r}"
+        )
 
 
 async def test_list_users_role_query_repeated_key_fails_closed(

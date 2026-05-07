@@ -165,7 +165,7 @@ def test_changed_columns_through_listener_paths_are_pii_hashed(
     """
     from core import audit as audit_mod
 
-    captured: dict[str, dict] = {}
+    captured: dict[str, dict[str, object]] = {}
 
     def fake_build(*, op, instance, ctx):  # type: ignore[no-untyped-def]
         # Drive the public mask helper directly — we want to verify its
