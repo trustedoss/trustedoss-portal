@@ -53,6 +53,17 @@ export const KNOWN_PROBLEM_EXTENSION_KEYS = [
   // We keep it because our 422 envelope embeds Pydantic's redacted error
   // list. Strict-typed below.
   "errors",
+  // Phase 4 PR #14 — admin operational endpoints (DT / Scans / Disk /
+  // Audit / Health). Each is a snake_case boolean flag that surfaces a
+  // specific domain invariant. Adding them to the strict whitelist gives
+  // the UI a stable, locale-independent error key without round-tripping
+  // through the unknown-primitive fallback.
+  "dt_unreachable",
+  "dt_orphan_cleanup_in_progress",
+  "scan_already_cancelled",
+  "scan_not_found",
+  "disk_path_unavailable",
+  "audit_export_too_large",
 ] as const;
 
 export type KnownProblemExtensionKey =
@@ -81,6 +92,12 @@ const KNOWN_EXTENSION_SCHEMAS: Record<KnownProblemExtensionKey, z.ZodTypeAny> = 
   team_id: z.string(),
   validation_error: z.boolean(),
   errors: z.array(z.unknown()).optional(),
+  dt_unreachable: z.boolean(),
+  dt_orphan_cleanup_in_progress: z.boolean(),
+  scan_already_cancelled: z.boolean(),
+  scan_not_found: z.boolean(),
+  disk_path_unavailable: z.boolean(),
+  audit_export_too_large: z.boolean(),
 };
 
 /**

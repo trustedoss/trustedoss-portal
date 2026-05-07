@@ -3,7 +3,12 @@
     "admin": {
       "entry": "Admin",
       "users": "Users",
-      "teams": "Teams"
+      "teams": "Teams",
+      "dt": "DT Connector",
+      "scans": "Scan Queue",
+      "disk": "Disk",
+      "audit": "Audit Log",
+      "health": "System Health"
     }
   },
   "admin": {
@@ -129,6 +134,196 @@
       },
       "empty": "No teams match the current filters."
     },
+    "dt": {
+      "title": "DT Connector",
+      "subtitle": "Monitor the Dependency-Track health, breaker state, and reconcile orphan projects.",
+      "status": {
+        "card_title": "Connector status",
+        "state_label": "Breaker state",
+        "fail_count_label": "Consecutive failures",
+        "version_label": "DT version",
+        "last_check_at_label": "Last check",
+        "last_error_label": "Last error",
+        "auto_restart_label": "Auto-restart attempted",
+        "no_version": "Unavailable",
+        "no_error": "None",
+        "yes": "Yes",
+        "no": "No"
+      },
+      "breaker": {
+        "closed": "Closed",
+        "open": "Open",
+        "half_open": "Half-open"
+      },
+      "actions": {
+        "force_health_check": "Force health probe",
+        "refresh": "Refresh",
+        "cleanup_selected": "Clean up selected",
+        "cleanup_all": "Clean up all orphans"
+      },
+      "orphans": {
+        "card_title": "Orphan projects",
+        "card_subtitle": "DT projects without a matching local scan. Cleanup permanently deletes them from DT.",
+        "column": {
+          "uuid": "DT project UUID",
+          "name": "Name",
+          "version": "Version"
+        },
+        "empty": "No orphan projects detected.",
+        "select_label": "Select"
+      },
+      "confirm": {
+        "cleanup": "Clean up the selected DT projects? This permanently deletes them from Dependency-Track.",
+        "cleanup_all": "Clean up every orphan project? This permanently deletes them from Dependency-Track."
+      },
+      "toast": {
+        "health_checked": "Health probe completed.",
+        "cleanup_enqueued": "Cleanup task enqueued."
+      }
+    },
+    "scans": {
+      "title": "Scan Queue",
+      "subtitle": "Cross-team view of every scan. Cancel runaway jobs from here.",
+      "tabs": {
+        "running": "Running",
+        "queued": "Queued",
+        "failed": "Failed",
+        "all": "All"
+      },
+      "column": {
+        "id": "Scan",
+        "project": "Project",
+        "team": "Team",
+        "status": "Status",
+        "kind": "Kind",
+        "started_at": "Started",
+        "duration": "Duration"
+      },
+      "status": {
+        "queued": "Queued",
+        "running": "Running",
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      },
+      "actions": {
+        "cancel": "Cancel scan",
+        "refresh": "Refresh"
+      },
+      "confirm": {
+        "cancel": "Cancel this scan? The Celery task will be revoked and the run will be marked cancelled."
+      },
+      "drawer": {
+        "title": "Scan {{id}}",
+        "project_label": "Project",
+        "team_label": "Team",
+        "kind_label": "Kind",
+        "status_label": "Status",
+        "started_at_label": "Started",
+        "finished_at_label": "Finished",
+        "duration_label": "Duration",
+        "error_label": "Error",
+        "no_error": "—",
+        "requested_by_label": "Requested by"
+      },
+      "toast": {
+        "cancelled": "Scan cancelled."
+      },
+      "empty": "No scans match the current filter."
+    },
+    "disk": {
+      "title": "Disk",
+      "subtitle": "Workspace, Dependency-Track volume, and database storage telemetry.",
+      "actions": {
+        "refresh": "Refresh"
+      },
+      "card": {
+        "workspace": "Workspace",
+        "dt_volume": "DT volume",
+        "postgres": "PostgreSQL",
+        "redis": "Redis"
+      },
+      "label": {
+        "path": "Path",
+        "used": "Used",
+        "free": "Free",
+        "total": "Total",
+        "used_pct": "Usage",
+        "warning_threshold": "Warning at",
+        "critical_threshold": "Critical at"
+      },
+      "status": {
+        "ok": "Healthy",
+        "degraded": "Approaching limit",
+        "down": "Critical"
+      },
+      "errors": {
+        "unavailable": "Telemetry unavailable: {{detail}}"
+      },
+      "collected_at": "Collected {{when}}"
+    },
+    "audit": {
+      "title": "Audit Log",
+      "subtitle": "Search every audited mutation across the portal. Sensitive columns (email, name) appear as sha256 fingerprints.",
+      "filter": {
+        "actor_user_id": "Actor user ID",
+        "target_table_label": "Target table",
+        "target_table_all": "All tables",
+        "action_label": "Action",
+        "action_placeholder": "create / update / delete …",
+        "from_label": "From",
+        "to_label": "To",
+        "q_label": "Diff search",
+        "q_placeholder": "Substring match against the diff JSON",
+        "q_pii_hint": "PII columns are stored as sha256 fingerprints. Plain-text search will not match emails or names."
+      },
+      "column": {
+        "created_at": "When",
+        "actor": "Actor",
+        "target_table": "Table",
+        "target_id": "Target",
+        "action": "Action",
+        "request_id": "Request ID"
+      },
+      "actions": {
+        "export_csv": "Export CSV",
+        "refresh": "Refresh"
+      },
+      "drawer": {
+        "title": "Audit entry",
+        "request_label": "Request ID",
+        "diff_label": "Diff",
+        "no_diff": "No diff captured.",
+        "sha256_pill": "sha256:{{prefix}}…"
+      },
+      "empty": "No audit rows match the current filters.",
+      "toast": {
+        "csv_started": "CSV export started."
+      }
+    },
+    "health": {
+      "title": "System Health",
+      "subtitle": "Aggregated probe status for every infrastructure component.",
+      "actions": {
+        "refresh": "Refresh"
+      },
+      "component": {
+        "postgres": "PostgreSQL",
+        "redis": "Redis",
+        "celery": "Celery worker",
+        "dt": "Dependency-Track",
+        "disk": "Disk",
+        "active_scans": "Active scans",
+        "last_24h_errors": "Errors (last 24h)"
+      },
+      "status": {
+        "ok": "Healthy",
+        "degraded": "Degraded",
+        "down": "Down"
+      },
+      "no_detail": "—",
+      "updated_at": "Updated {{when}}"
+    },
     "errors": {
       "last_super_admin_protected": "You cannot demote or deactivate the only Super Admin.",
       "cannot_modify_self": "You cannot perform this action on your own account.",
@@ -136,6 +331,12 @@
       "team_has_active_scans": "This team has scans currently running. Wait for them to finish or cancel them first.",
       "invalid_role_assignment": "The selected role and team combination is not valid.",
       "slug_conflict": "A team with that slug already exists.",
+      "dt_unreachable": "Dependency-Track is unreachable. The breaker is OPEN — try again after the next probe succeeds.",
+      "dt_orphan_cleanup_in_progress": "An orphan-cleanup task is already running. Wait for it to finish before launching another.",
+      "scan_already_cancelled": "This scan is already terminated and cannot be cancelled again.",
+      "scan_not_found": "Scan not found.",
+      "disk_path_unavailable": "Disk telemetry is unavailable for one or more mounts.",
+      "audit_export_too_large": "The export exceeds 100,000 rows. Narrow the filter window before retrying.",
       "unknown": "Something went wrong. Please try again."
     },
     "not_found": {
