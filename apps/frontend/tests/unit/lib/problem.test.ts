@@ -302,4 +302,78 @@ describe("KNOWN_PROBLEM_EXTENSION_KEYS — module export pin", () => {
       ]),
     );
   });
+
+  it("includes every PR #14 admin operational extension", () => {
+    expect(KNOWN_PROBLEM_EXTENSION_KEYS).toEqual(
+      expect.arrayContaining([
+        "dt_unreachable",
+        "dt_orphan_cleanup_in_progress",
+        "scan_already_cancelled",
+        "scan_not_found",
+        "disk_path_unavailable",
+        "audit_export_too_large",
+      ]),
+    );
+  });
+});
+
+describe("parseProblemBody — PR #14 admin extensions", () => {
+  it("preserves dt_unreachable boolean", () => {
+    const { problem } = parseProblemBody(
+      {
+        type: "about:blank",
+        title: "DT unreachable",
+        status: 503,
+        detail: "breaker is open",
+        dt_unreachable: true,
+      },
+      STATUS_FALLBACK,
+    );
+    expect(problem?.dt_unreachable).toBe(true);
+  });
+
+  it("preserves scan_already_cancelled boolean", () => {
+    const { problem } = parseProblemBody(
+      {
+        type: "about:blank",
+        title: "scan already cancelled",
+        status: 409,
+        detail: "scan already cancelled",
+        scan_already_cancelled: true,
+      },
+      STATUS_FALLBACK,
+    );
+    expect(problem?.scan_already_cancelled).toBe(true);
+  });
+
+  it("preserves audit_export_too_large boolean", () => {
+    const { problem } = parseProblemBody(
+      {
+        type: "about:blank",
+        title: "export too large",
+        status: 413,
+        detail: "narrow window",
+        audit_export_too_large: true,
+      },
+      STATUS_FALLBACK,
+    );
+    expect(problem?.audit_export_too_large).toBe(true);
+  });
+
+  it("drops a malformed scan_not_found (non-boolean)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { problem } = parseProblemBody(
+      {
+        type: "about:blank",
+        title: "scan not found",
+        status: 404,
+        detail: "missing",
+        scan_not_found: "yes",
+      },
+      STATUS_FALLBACK,
+    );
+    expect(problem?.scan_not_found).toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
 });

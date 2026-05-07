@@ -36,6 +36,16 @@ describe("adminErrorMessageKey", () => {
     ["last_team_admin_protected", "admin.errors.last_team_admin_protected"],
     ["team_has_active_scans", "admin.errors.team_has_active_scans"],
     ["invalid_role_assignment", "admin.errors.invalid_role_assignment"],
+    // Phase 4 PR #14 — admin operational extensions.
+    ["dt_unreachable", "admin.errors.dt_unreachable"],
+    [
+      "dt_orphan_cleanup_in_progress",
+      "admin.errors.dt_orphan_cleanup_in_progress",
+    ],
+    ["scan_already_cancelled", "admin.errors.scan_already_cancelled"],
+    ["scan_not_found", "admin.errors.scan_not_found"],
+    ["disk_path_unavailable", "admin.errors.disk_path_unavailable"],
+    ["audit_export_too_large", "admin.errors.audit_export_too_large"],
   ])("maps extension %s to %s", (extension, expected) => {
     const result = adminErrorMessageKey(err(422, { [extension]: true }));
     expect(result).toBe(expected);
@@ -71,6 +81,12 @@ describe("adminErrorExtension", () => {
     "last_team_admin_protected",
     "team_has_active_scans",
     "invalid_role_assignment",
+    "dt_unreachable",
+    "dt_orphan_cleanup_in_progress",
+    "scan_already_cancelled",
+    "scan_not_found",
+    "disk_path_unavailable",
+    "audit_export_too_large",
   ])("returns %s when the extension flag is true", (extension) => {
     expect(adminErrorExtension(err(422, { [extension]: true }))).toBe(
       extension,
