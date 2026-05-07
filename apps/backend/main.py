@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 
 from api.v1 import (
+    admin_router,
     auth_router,
     components_router,
     licenses_router,
@@ -127,6 +128,7 @@ install_exception_handlers(app)
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(projects_router)
 app.include_router(scans_router)
 app.include_router(components_router)
