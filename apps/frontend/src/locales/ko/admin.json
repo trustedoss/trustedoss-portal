@@ -3,7 +3,12 @@
     "admin": {
       "entry": "관리자",
       "users": "사용자",
-      "teams": "팀"
+      "teams": "팀",
+      "dt": "DT 커넥터",
+      "scans": "스캔 큐",
+      "disk": "디스크",
+      "audit": "감사 로그",
+      "health": "시스템 상태"
     }
   },
   "admin": {
@@ -129,6 +134,196 @@
       },
       "empty": "현재 필터에 해당하는 팀이 없습니다."
     },
+    "dt": {
+      "title": "DT 커넥터",
+      "subtitle": "Dependency-Track 상태와 서킷 브레이커, 고아 프로젝트 정리를 관리합니다.",
+      "status": {
+        "card_title": "커넥터 상태",
+        "state_label": "브레이커 상태",
+        "fail_count_label": "연속 실패 수",
+        "version_label": "DT 버전",
+        "last_check_at_label": "마지막 점검",
+        "last_error_label": "마지막 오류",
+        "auto_restart_label": "자동 재시작 시도",
+        "no_version": "확인 불가",
+        "no_error": "없음",
+        "yes": "예",
+        "no": "아니오"
+      },
+      "breaker": {
+        "closed": "닫힘",
+        "open": "열림",
+        "half_open": "절반 열림"
+      },
+      "actions": {
+        "force_health_check": "상태 강제 점검",
+        "refresh": "새로 고침",
+        "cleanup_selected": "선택 정리",
+        "cleanup_all": "모든 고아 정리"
+      },
+      "orphans": {
+        "card_title": "고아 프로젝트",
+        "card_subtitle": "포털에 매칭되는 스캔이 없는 DT 프로젝트입니다. 정리는 DT 에서 영구 삭제합니다.",
+        "column": {
+          "uuid": "DT 프로젝트 UUID",
+          "name": "이름",
+          "version": "버전"
+        },
+        "empty": "감지된 고아 프로젝트가 없습니다.",
+        "select_label": "선택"
+      },
+      "confirm": {
+        "cleanup": "선택한 DT 프로젝트를 정리하시겠습니까? Dependency-Track 에서 영구 삭제됩니다.",
+        "cleanup_all": "모든 고아 프로젝트를 정리하시겠습니까? Dependency-Track 에서 영구 삭제됩니다."
+      },
+      "toast": {
+        "health_checked": "상태 점검이 완료되었습니다.",
+        "cleanup_enqueued": "정리 작업이 큐에 등록되었습니다."
+      }
+    },
+    "scans": {
+      "title": "스캔 큐",
+      "subtitle": "전 팀의 스캔 큐. 폭주하는 작업을 여기서 취소할 수 있습니다.",
+      "tabs": {
+        "running": "실행 중",
+        "queued": "대기",
+        "failed": "실패",
+        "all": "전체"
+      },
+      "column": {
+        "id": "스캔",
+        "project": "프로젝트",
+        "team": "팀",
+        "status": "상태",
+        "kind": "종류",
+        "started_at": "시작",
+        "duration": "소요 시간"
+      },
+      "status": {
+        "queued": "대기",
+        "running": "실행 중",
+        "succeeded": "성공",
+        "failed": "실패",
+        "cancelled": "취소됨"
+      },
+      "actions": {
+        "cancel": "스캔 취소",
+        "refresh": "새로 고침"
+      },
+      "confirm": {
+        "cancel": "이 스캔을 취소하시겠습니까? Celery 작업이 revoke 되고 상태가 cancelled 로 변경됩니다."
+      },
+      "drawer": {
+        "title": "스캔 {{id}}",
+        "project_label": "프로젝트",
+        "team_label": "팀",
+        "kind_label": "종류",
+        "status_label": "상태",
+        "started_at_label": "시작",
+        "finished_at_label": "종료",
+        "duration_label": "소요 시간",
+        "error_label": "오류",
+        "no_error": "—",
+        "requested_by_label": "요청자"
+      },
+      "toast": {
+        "cancelled": "스캔이 취소되었습니다."
+      },
+      "empty": "현재 필터에 해당하는 스캔이 없습니다."
+    },
+    "disk": {
+      "title": "디스크",
+      "subtitle": "워크스페이스, Dependency-Track 볼륨, 데이터베이스 저장공간 텔레메트리.",
+      "actions": {
+        "refresh": "새로 고침"
+      },
+      "card": {
+        "workspace": "워크스페이스",
+        "dt_volume": "DT 볼륨",
+        "postgres": "PostgreSQL",
+        "redis": "Redis"
+      },
+      "label": {
+        "path": "경로",
+        "used": "사용",
+        "free": "여유",
+        "total": "전체",
+        "used_pct": "사용률",
+        "warning_threshold": "경고 임계치",
+        "critical_threshold": "심각 임계치"
+      },
+      "status": {
+        "ok": "정상",
+        "degraded": "한계 근접",
+        "down": "심각"
+      },
+      "errors": {
+        "unavailable": "텔레메트리를 사용할 수 없습니다: {{detail}}"
+      },
+      "collected_at": "수집 시각: {{when}}"
+    },
+    "audit": {
+      "title": "감사 로그",
+      "subtitle": "포털 전체의 감사 대상 변경을 검색합니다. 민감 컬럼(이메일, 이름)은 sha256 지문으로 표시됩니다.",
+      "filter": {
+        "actor_user_id": "행위자 사용자 ID",
+        "target_table_label": "대상 테이블",
+        "target_table_all": "모든 테이블",
+        "action_label": "액션",
+        "action_placeholder": "create / update / delete …",
+        "from_label": "시작",
+        "to_label": "종료",
+        "q_label": "diff 검색",
+        "q_placeholder": "diff JSON 의 부분 문자열 매칭",
+        "q_pii_hint": "PII 컬럼은 sha256 지문으로 저장됩니다. 평문 검색은 이메일이나 이름과 매칭되지 않습니다."
+      },
+      "column": {
+        "created_at": "시각",
+        "actor": "행위자",
+        "target_table": "테이블",
+        "target_id": "대상",
+        "action": "액션",
+        "request_id": "요청 ID"
+      },
+      "actions": {
+        "export_csv": "CSV 내보내기",
+        "refresh": "새로 고침"
+      },
+      "drawer": {
+        "title": "감사 항목",
+        "request_label": "요청 ID",
+        "diff_label": "Diff",
+        "no_diff": "diff 가 캡처되지 않았습니다.",
+        "sha256_pill": "sha256:{{prefix}}…"
+      },
+      "empty": "현재 필터에 해당하는 감사 항목이 없습니다.",
+      "toast": {
+        "csv_started": "CSV 내보내기가 시작되었습니다."
+      }
+    },
+    "health": {
+      "title": "시스템 상태",
+      "subtitle": "모든 인프라 컴포넌트의 통합 상태 점검 결과.",
+      "actions": {
+        "refresh": "새로 고침"
+      },
+      "component": {
+        "postgres": "PostgreSQL",
+        "redis": "Redis",
+        "celery": "Celery 워커",
+        "dt": "Dependency-Track",
+        "disk": "디스크",
+        "active_scans": "실행 중 스캔",
+        "last_24h_errors": "최근 24시간 오류"
+      },
+      "status": {
+        "ok": "정상",
+        "degraded": "주의",
+        "down": "다운"
+      },
+      "no_detail": "—",
+      "updated_at": "갱신 시각: {{when}}"
+    },
     "errors": {
       "last_super_admin_protected": "마지막 슈퍼 관리자의 권한을 강등하거나 비활성화할 수 없습니다.",
       "cannot_modify_self": "본인 계정에 이 작업을 수행할 수 없습니다.",
@@ -136,6 +331,12 @@
       "team_has_active_scans": "이 팀에 실행 중인 스캔이 있습니다. 완료될 때까지 기다리거나 먼저 취소하세요.",
       "invalid_role_assignment": "선택한 역할과 팀 조합이 유효하지 않습니다.",
       "slug_conflict": "동일한 슬러그를 가진 팀이 이미 존재합니다.",
+      "dt_unreachable": "Dependency-Track 에 연결할 수 없습니다. 브레이커가 OPEN 상태입니다 — 다음 점검이 성공하면 다시 시도하세요.",
+      "dt_orphan_cleanup_in_progress": "이미 고아 정리 작업이 실행 중입니다. 완료된 후 다시 시도하세요.",
+      "scan_already_cancelled": "이미 종료된 스캔은 다시 취소할 수 없습니다.",
+      "scan_not_found": "스캔을 찾을 수 없습니다.",
+      "disk_path_unavailable": "일부 마운트의 디스크 텔레메트리를 가져올 수 없습니다.",
+      "audit_export_too_large": "내보낼 행 수가 100,000 건을 초과합니다. 필터 범위를 좁힌 후 다시 시도하세요.",
       "unknown": "오류가 발생했습니다. 다시 시도해 주세요."
     },
     "not_found": {
