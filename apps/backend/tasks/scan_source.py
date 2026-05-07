@@ -36,6 +36,8 @@ Workspace:
 from __future__ import annotations
 
 import shutil
+import subprocess
+import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -80,6 +82,7 @@ log = structlog.get_logger("tasks.scan_source")
 _STAGE_PROGRESS: dict[str, int] = {
     "bootstrap": 0,
     "fetch": 10,
+    "prep": 18,
     "cdxgen": 25,
     "ort": 50,
     "dt_upload": 70,
@@ -194,6 +197,14 @@ def _run_pipeline(
         mock_only=False,
     )
 
+    # Stage 2.5 — multi-language pre-cdxgen prep. cdxgen needs a populated
+    # lockfile to enumerate transitive deps for Ruby / Rust / Go / .NET; the
+    # 2026-05-07 ecosystem-matrix UAT showed bare-source scans returned 0 or
+    # only direct deps for those four ecosystems. Best-effort: a failed prep
+    # logs a warning and the scan continues with whatever cdxgen can extract.
+    _set_stage(scan_uuid, "prep")
+    _prepare_for_cdxgen(source_dir=source_dir, scan_uuid=scan_uuid)
+
     # Stage 3 — cdxgen.
     _set_stage(scan_uuid, "cdxgen")
     cdxgen_result = cdxgen_adapter.run_cdxgen(
@@ -256,8 +267,20 @@ def _run_pipeline(
         )
 
         # Stage 6 — DT findings poll.
+        # DT runs vulnerability matching asynchronously after BOM upload
+        # (BOM_UPLOAD_ANALYSIS event). The first poll within ~1 second of
+        # upload typically returns 0 findings even when matches exist —
+        # this was the false-empty path observed during the 2026-05-07
+        # UAT (54 Maven CVEs that DT had matched, but the scan persisted
+        # 0 because the synchronous poll fired too early). Retry with
+        # exponential backoff (≤60s budget) so the eventual findings make
+        # it onto the scan row before the user sees it.
         _set_stage(scan_uuid, "dt_findings")
-        findings = breaker.call(lambda: dt_client.get_findings(project_uuid=dt_project_uuid))
+        findings = _poll_dt_findings_with_retry(
+            dt_client=dt_client,
+            breaker=breaker,
+            dt_project_uuid=dt_project_uuid,
+        )
         with sync_session_scope() as session:
             _persist_findings(session, scan_uuid=scan_uuid, findings=findings)
             session.commit()
@@ -390,10 +413,8 @@ def _fetch_source(
     else:
         cmd = ["git", "clone", "--depth", "1", normalized_url, str(target)]
 
-    # subprocess import is local so the mock-only fast-path stays free of
-    # imports we never use in tests.
-    import subprocess  # pragma: no cover — dead-code branch until activated
-
+    # subprocess is imported at module scope so the prep helper can use it
+    # too (chore PR #4); the dead-code branch below shares that import.
     log.info(  # pragma: no cover — dead-code branch
         "scan_source_fetch_real",
         normalized_url=redact_url_userinfo(normalized_url),
@@ -501,6 +522,176 @@ def _persist_artifact(scan_uuid: uuid.UUID, *, kind: str, path: Path) -> None:
         )
         session.add(artifact)
         session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Multi-language pre-cdxgen prep
+# ---------------------------------------------------------------------------
+
+
+# Per-language step timeout. 5 minutes is enough for `bundle lock` /
+# `cargo generate-lockfile` / `go mod tidy` / `dotnet restore` on the
+# pilot repos in the 2026-05-07 matrix (none exceeded ~60s) while still
+# capping a runaway resolver before it eats the scan's 60-min budget.
+_PREP_STEP_TIMEOUT_SECONDS = 300
+
+
+def _prepare_for_cdxgen(*, source_dir: Path, scan_uuid: uuid.UUID) -> None:
+    """Run language-specific lockfile / dependency-resolution steps before
+    handing the workspace to cdxgen.
+
+    cdxgen reads existing lockfiles (Gemfile.lock / Cargo.lock / go.sum /
+    `obj/project.assets.json`) to enumerate transitive dependencies. When
+    those are absent the SBOM only lists direct deps — or zero, depending
+    on the ecosystem (see docs/sessions/2026-05-07-uat-multi-ecosystem-
+    matrix.md for the per-ecosystem breakdown).
+
+    Each step runs at most once per scan and is best-effort: a failure
+    logs a warning and the scan continues. We never raise from here — the
+    surrounding `_run_pipeline` would map any exception onto the scan's
+    terminal-failure path, but a missing transitive deps list is a
+    degraded-output scenario, not a fatal one.
+    """
+    timeout = _PREP_STEP_TIMEOUT_SECONDS
+
+    if (source_dir / "Gemfile").exists() and not (source_dir / "Gemfile.lock").exists():
+        _run_prep(
+            "bundle lock", ["bundle", "lock"], source_dir, timeout, scan_uuid
+        )
+    if (source_dir / "Cargo.toml").exists() and not (source_dir / "Cargo.lock").exists():
+        _run_prep(
+            "cargo generate-lockfile",
+            ["cargo", "generate-lockfile"],
+            source_dir,
+            timeout,
+            scan_uuid,
+        )
+    if (source_dir / "go.mod").exists():
+        # `go mod tidy` is idempotent — re-running with go.sum already
+        # present just verifies the graph. Run unconditionally so a
+        # partial / out-of-date go.sum is healed before cdxgen reads it.
+        _run_prep("go mod tidy", ["go", "mod", "tidy"], source_dir, timeout, scan_uuid)
+    if any(source_dir.glob("*.csproj")) and shutil.which("dotnet"):
+        _run_prep("dotnet restore", ["dotnet", "restore"], source_dir, timeout, scan_uuid)
+
+
+def _run_prep(
+    name: str,
+    cmd: list[str],
+    cwd: Path,
+    timeout: int,
+    scan_uuid: uuid.UUID,
+) -> None:
+    """Best-effort prep — log failure but don't abort the scan.
+
+    cdxgen still produces a partial SBOM from raw source if prep fails,
+    so a Gemfile-only repo with a flaky network is degraded but not
+    broken. We capture stdout/stderr (text) so structlog can record
+    actionable failure context — limited to 500 chars to bound a runaway
+    resolver's diagnostic spew, which has been seen on cargo network
+    timeouts.
+
+    Security: ``cmd`` is a hardcoded list that originates in
+    ``_prepare_for_cdxgen`` (no user input). ``cwd`` is the scan's own
+    workspace directory, which the worker created earlier in this
+    pipeline. There is no shell interpolation. Bandit's S603 warning
+    ("subprocess call - check for execution of untrusted input") is a
+    false positive for this controlled invocation.
+    """
+    try:
+        result = subprocess.run(  # noqa: S603 — see docstring
+            cmd,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        log.info(
+            "prep_finished",
+            step=name,
+            scan_id=str(scan_uuid),
+            returncode=result.returncode,
+        )
+        if result.returncode != 0:
+            log.warning(
+                "prep_failed",
+                step=name,
+                scan_id=str(scan_uuid),
+                stderr=(result.stderr or "")[:500],
+            )
+    except subprocess.TimeoutExpired:
+        log.warning(
+            "prep_timeout",
+            step=name,
+            scan_id=str(scan_uuid),
+            timeout=timeout,
+        )
+    except FileNotFoundError as exc:
+        # The tool isn't on PATH — typically a worker image without the
+        # corresponding language layer (chore PR #4 ships them, but a
+        # legacy 2.5GB worker may still be deployed). Don't fail the
+        # scan; warn so operators can spot the gap.
+        log.warning(
+            "prep_tool_missing",
+            step=name,
+            scan_id=str(scan_uuid),
+            cmd=cmd[0],
+            error=str(exc),
+        )
+
+
+# ---------------------------------------------------------------------------
+# DT findings retry-with-backoff
+# ---------------------------------------------------------------------------
+
+
+_DT_FINDINGS_POLL_DELAYS_SECONDS: tuple[int, ...] = (2, 4, 8, 16, 30)
+
+
+def _poll_dt_findings_with_retry(
+    *,
+    dt_client: DTClient,
+    breaker: CircuitBreaker,
+    dt_project_uuid: str,
+) -> list[dict[str, Any]]:
+    """Poll DT for findings with exponential backoff.
+
+    DT runs the OSV / NVD matcher asynchronously when a BOM is uploaded
+    (BOM_UPLOAD_ANALYSIS event). The first poll within ~1s of upload
+    typically returns 0 findings even when matches will eventually
+    materialise — this was the false-empty seen across the UAT pilots.
+
+    Strategy: sleep, then poll. Total budget is the sum of
+    ``_DT_FINDINGS_POLL_DELAYS_SECONDS`` (~60s for the default
+    2/4/8/16/30 schedule). Return as soon as we see a non-empty result —
+    DT's matcher emits the full set in one go, not a streaming partial
+    view. If every attempt returns empty we return an empty list rather
+    than raising; the caller persists zero findings, which matches the
+    current "no matches" behaviour.
+
+    The breaker still wraps each poll, so a DT outage mid-retry trips
+    the breaker and short-circuits the remaining attempts.
+
+    Tests inject a no-op delay schedule via
+    ``monkeypatch.setattr("tasks.scan_source._DT_FINDINGS_POLL_DELAYS_SECONDS", (0,))``
+    or replace ``tasks.scan_source.time.sleep`` directly.
+    """
+    findings: list[dict[str, Any]] = []
+    for attempt, delay in enumerate(_DT_FINDINGS_POLL_DELAYS_SECONDS, start=1):
+        time.sleep(delay)
+        findings = breaker.call(
+            lambda: dt_client.get_findings(project_uuid=dt_project_uuid)
+        )
+        log.info(
+            "dt_findings_poll",
+            attempt=attempt,
+            delay=delay,
+            count=len(findings),
+        )
+        if findings:
+            return findings
+    return findings
 
 
 def _persist_components(
