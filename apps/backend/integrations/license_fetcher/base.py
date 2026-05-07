@@ -32,6 +32,7 @@ Design notes
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -40,6 +41,11 @@ from typing import Protocol
 
 import httpx
 import structlog
+
+# SPDX 3.x licence-id token shape — ASCII letters/digits + ``-`` ``.``
+# ``+``. Anchored so partial matches do not slip through. Used inside
+# ``normalize_spdx_id`` to gate the "verbatim SPDX id" passthrough.
+_SPDX_ID_TOKEN_RE = re.compile(r"\A[A-Za-z][A-Za-z0-9.+\-]*\Z")
 
 log = structlog.get_logger("integrations.license_fetcher")
 
@@ -275,6 +281,25 @@ _SPDX_ALIASES: dict[str, str] = {
     "lgpl-2.1": "LGPL-2.1-only",
     "lgpl-3.0": "LGPL-3.0-only",
     "agpl-3.0": "AGPL-3.0-only",
+    # Maven POM free-text variants observed during the chore PR #7
+    # UAT v2 spot-check (hibernate-core / aspectjweaver / similar).
+    "gnu library general public license v2.1 or later": "LGPL-2.1-or-later",
+    "gnu lesser general public license v2.1 or later": "LGPL-2.1-or-later",
+    "gnu lesser general public license, version 2.1": "LGPL-2.1-only",
+    "gnu lesser general public license version 2.1": "LGPL-2.1-only",
+    "gnu lesser general public license v3.0 or later": "LGPL-3.0-or-later",
+    "gnu general public license, version 2": "GPL-2.0-only",
+    "gnu general public license, version 3": "GPL-3.0-only",
+    "gnu general public license v2 or later": "GPL-2.0-or-later",
+    "gnu general public license v3 or later": "GPL-3.0-or-later",
+    "gnu affero general public license v3 or later": "AGPL-3.0-or-later",
+    "eclipse public license - v 2.0": "EPL-2.0",
+    "eclipse public license - v 1.0": "EPL-1.0",
+    "eclipse public license, version 2.0": "EPL-2.0",
+    "eclipse public license version 2.0": "EPL-2.0",
+    "the eclipse public license version 2.0": "EPL-2.0",
+    "the eclipse public license, version 2.0": "EPL-2.0",
+    "epl-2.0 or later": "EPL-2.0",
     # Other commons
     "isc": "ISC",
     "isc license": "ISC",
@@ -300,50 +325,102 @@ _SPDX_ALIASES: dict[str, str] = {
 }
 
 
+def _split_compound(candidate: str, separator_upper: str) -> list[str]:
+    """Split ``candidate`` on the case-insensitive separator (e.g. " OR ")."""
+    upper = candidate.upper()
+    pieces: list[str] = []
+    start = 0
+    while True:
+        idx = upper.find(separator_upper, start)
+        if idx == -1:
+            pieces.append(candidate[start:].strip())
+            break
+        pieces.append(candidate[start:idx].strip())
+        start = idx + len(separator_upper)
+    return [p for p in pieces if p]
+
+
 def normalize_spdx_id(raw: str | None) -> str | None:
     """Return a canonical SPDX id, or ``None`` if we cannot reduce it.
 
     Policy:
-      * Compound expressions (``MIT OR Apache-2.0``, ``GPL-2.0 WITH
-        Classpath-exception-2.0``, ``BSD-3-Clause AND MIT``) → ``None``.
-        Same rule as ``scan_source._extract_spdx_ids`` — we'd need a
-        real expression parser to pick the effective licence.
+      * **AND** compound expressions (e.g. ``BSD-3-Clause AND MIT``)
+        → ``None``. We cannot represent "must comply with both" as a
+        single SPDX id.
+      * **OR** compound expressions (e.g. ``MIT OR Apache-2.0`` —
+        the dominant convention in the Rust ecosystem) → take the
+        first token that normalises successfully. Per SPDX semantics,
+        ``X OR Y`` means either license is acceptable, so picking the
+        first is sound.
+      * **WITH** compound expressions (e.g.
+        ``GPL-2.0 WITH Classpath-exception-2.0``) → take the base
+        license (left of ``WITH``). The exception clause cannot be
+        represented as a single SPDX id; the obligation tracker can
+        revisit the exception in a future PR.
       * Strings that *match* a known SPDX id (case-sensitive) pass
         through unchanged. We do not attempt to validate against the
-        full SPDX list — the downstream classifier (``_LICENSE_CATEGORY_DEFAULTS``)
-        will land any unrecognised id in the ``unknown`` bucket.
+        full SPDX list — the downstream classifier
+        (``_LICENSE_CATEGORY_DEFAULTS``) will land any unrecognised
+        id in the ``unknown`` bucket.
       * Free-text (e.g. ``"Apache 2.0"``) flows through the alias
         table. Anything not in the table → ``None`` (we'd rather emit
         "license unknown" than commit to a guess).
+
+    The ``OR`` / ``WITH`` policy was added in chore PR #7 after the
+    UAT v2 spot-check showed the previous "reject all compounds"
+    rule produced 90% unknown for the Rust ecosystem.
     """
     if not raw:
         return None
     candidate = raw.strip()
     if not candidate:
         return None
-    # Reject compound expressions outright.
-    upper_padded = f" {candidate.upper()} "
-    if any(kw in upper_padded for kw in (" AND ", " OR ", " WITH ")):
-        return None
-    # 1) Alias hit (covers free-text and lower-cased SPDX ids).
+    # 0) Alias-first. Phrases like "GNU Lesser General Public License
+    # v2.1 or later" contain a literal " or " that the compound
+    # splitter would otherwise mis-handle as an SPDX ``OR`` operator;
+    # checking the alias map up front lets these pass straight through.
     aliased = _SPDX_ALIASES.get(candidate.lower())
     if aliased is not None:
         return aliased
-    # 2) Looks like an SPDX id verbatim — short, no whitespace, well-formed
-    # token shape (`Foo-1.2`, `BSD-3-Clause`, `Python-2.0`). We accept the
-    # candidate as-is so previously-canonical ids round-trip cleanly. To
-    # avoid swallowing bare free-text strings that happen to be short and
-    # alphanumeric (e.g. ``"Custom"`` or ``"totally-not-a-license-name"``),
-    # we require the candidate to contain at least one digit (every real
-    # SPDX id with a version does — Apache-2.0, BSD-3-Clause, GPL-2.0-only)
-    # OR be one of a small list of well-known identifier-only ids.
+    upper_padded = f" {candidate.upper()} "
+    upper_candidate = candidate.upper()
+    # AND is the only compound we reject outright.
+    if " AND " in upper_padded:
+        return None
+    # OR — pick the first token that normalises successfully. The
+    # self-reference guard (token == candidate) is critical: a bare
+    # ``"OR"`` input would otherwise trip an infinite recursion via
+    # ``_split_compound("OR", " OR ")`` → ``["OR"]`` → recurse.
+    # security-reviewer High (chore PR #7).
+    if " OR " in upper_padded:
+        for token in _split_compound(candidate, " OR "):
+            if token.upper() == upper_candidate:
+                # Bare separator or self-reference — would loop forever.
+                continue
+            normalised = normalize_spdx_id(token)
+            if normalised is not None:
+                return normalised
+        return None
+    # WITH — take the base license, drop the exception. Same guard:
+    # ``"WITH"`` and ``"WITH WITH"`` would otherwise recurse forever.
+    if " WITH " in upper_padded:
+        pieces = _split_compound(candidate, " WITH ")
+        if not pieces or pieces[0].upper() == upper_candidate:
+            return None
+        return normalize_spdx_id(pieces[0])
+    # 2) Looks like an SPDX id verbatim — strict charset to avoid
+    # accepting attacker payloads as licence ids. SPDX 3.x ids use
+    # ASCII letters / digits / ``-`` / ``.`` / ``+`` only; anything
+    # outside that set (``:`` / ``<`` / ``/`` / ``\x00`` / unicode)
+    # would otherwise leak through into ``licenses.spdx_id`` and on
+    # into Excel / PDF / SBOM exports. security-reviewer Medium #2
+    # (chore PR #7).
     _BARE_SPDX_IDS = {"MIT", "ISC", "Zlib", "WTFPL", "0BSD", "Unlicense"}
     if candidate in _BARE_SPDX_IDS:
         return candidate
     if (
-        " " not in candidate
-        and "/" not in candidate
-        and len(candidate) <= 64
+        len(candidate) <= 64
+        and _SPDX_ID_TOKEN_RE.match(candidate) is not None
         and any(ch.isdigit() for ch in candidate)
         and any(ch.isalpha() for ch in candidate)
     ):

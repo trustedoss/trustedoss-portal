@@ -58,11 +58,12 @@ def test_alembic_current_reports_head_revision():
         timeout=30,
     )
     assert current.returncode == 0, current.stderr
-    # `alembic current` prints the head revision. Each schema-changing
-    # migration advances this — chore PR #5 (license fetcher cache)
-    # bumped head from 0003 → 0004. Bump again when a future
+    # `alembic current` prints the head revision. Each migration
+    # advances this — chore PR #5 bumped 0003 → 0004 (license fetcher
+    # cache); chore PR #7 bumped 0004 → 0005 (data wipe of
+    # phishing-prone reference URLs). Bump again when a future
     # migration lands.
-    assert "0004" in current.stdout, current.stdout
+    assert "0005" in current.stdout, current.stdout
 
 
 @pytest.mark.integration
@@ -152,3 +153,105 @@ async def test_scan_partial_unique_index_present_after_upgrade():
     # Must be UNIQUE and partial on status IN ('queued','running').
     assert "UNIQUE" in indexdef.upper()
     assert "queued" in indexdef and "running" in indexdef
+
+
+@pytest.mark.integration
+async def test_chore_pr7_data_migration_clears_reference_url():
+    """Re-applying revision 0005 wipes any populated reference_url
+    cells in ``license_fetch_cache`` (security-reviewer Medium #2).
+
+    The migration is idempotent — its WHERE clause filters out rows
+    that already have ``reference_url IS NULL``.
+    """
+    if not os.getenv("DATABASE_URL"):
+        pytest.skip("DATABASE_URL not set — skip alembic integration test")
+
+    from datetime import UTC, datetime
+
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from core.config import database_url
+
+    upgrade = subprocess.run(
+        ["alembic", "upgrade", "head"],
+        cwd=BACKEND_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert upgrade.returncode == 0, upgrade.stderr
+
+    engine = create_async_engine(database_url(), pool_pre_ping=True, future=True)
+    factory = async_sessionmaker(engine)
+
+    purl_with_url = "pkg:maven/com.test.alembic-pr7/with-url@1"
+    purl_without_url = "pkg:maven/com.test.alembic-pr7/no-url@1"
+    try:
+        # Stage two cache rows: one with a (would-be-phishing)
+        # reference_url, one already cleared. Then re-run the data
+        # migration head-only and assert both are NULL.
+        async with factory() as session:
+            await session.execute(
+                text(
+                    "DELETE FROM license_fetch_cache "
+                    "WHERE purl LIKE :p"
+                ),
+                {"p": "pkg:maven/com.test.alembic-pr7/%"},
+            )
+            await session.execute(
+                text(
+                    "INSERT INTO license_fetch_cache "
+                    "(purl, spdx_id, reference_url, source, is_negative, "
+                    " fetched_at) "
+                    "VALUES "
+                    "(:p1, 'Apache-2.0', 'https://attacker.example/spoof', "
+                    " 'maven_central', false, :ts), "
+                    "(:p2, 'MIT', NULL, 'maven_central', false, :ts)"
+                ),
+                {"p1": purl_with_url, "p2": purl_without_url, "ts": datetime.now(UTC)},
+            )
+            await session.commit()
+
+        # Re-apply the data migration. ``alembic stamp`` rewinds the
+        # version pointer one step so ``upgrade head`` re-runs revision
+        # 0005's UPDATE.
+        stamp = subprocess.run(
+            ["alembic", "stamp", "0004"],
+            cwd=BACKEND_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert stamp.returncode == 0, stamp.stderr
+
+        rerun = subprocess.run(
+            ["alembic", "upgrade", "head"],
+            cwd=BACKEND_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert rerun.returncode == 0, rerun.stderr
+
+        async with factory() as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT purl, reference_url FROM license_fetch_cache "
+                        "WHERE purl LIKE :p ORDER BY purl"
+                    ),
+                    {"p": "pkg:maven/com.test.alembic-pr7/%"},
+                )
+            ).all()
+            await session.execute(
+                text("DELETE FROM license_fetch_cache WHERE purl LIKE :p"),
+                {"p": "pkg:maven/com.test.alembic-pr7/%"},
+            )
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+    by_purl = {row[0]: row[1] for row in rows}
+    assert by_purl.get(purl_with_url) is None, "phishing reference_url not cleared"
+    assert by_purl.get(purl_without_url) is None, "already-NULL row mutated unexpectedly"
