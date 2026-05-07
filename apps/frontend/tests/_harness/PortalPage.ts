@@ -13,6 +13,9 @@
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
+import { AdminTeamsHarness } from "./AdminTeamsHarness";
+import { AdminUsersHarness } from "./AdminUsersHarness";
+
 // We deliberately re-declare the supported-language tuple here instead of
 // importing from `@/lib/i18n`. The product i18n module pulls in JSON locale
 // files as ESM imports — Playwright's runner does not understand the
@@ -768,6 +771,27 @@ export class PortalPage {
         { timeout: 10_000 },
       )
       .toBe(targetStatus);
+  }
+
+  // ───── PR #13 — Admin panel (Phase 4) ──────────────────────────────────
+  /**
+   * Navigate to ``/admin/users`` and return a domain-verb harness for the
+   * page. Convenience wrapper so spec files don't have to import the admin
+   * harnesses themselves; the underlying class is still available for tests
+   * that need to construct it directly (e.g. "expectAccessDenied" assertions
+   * that don't want the auto-mount wait).
+   */
+  async gotoAdminUsers(): Promise<AdminUsersHarness> {
+    const harness = new AdminUsersHarness(this.page, this.baseUrl);
+    await harness.goto();
+    return harness;
+  }
+
+  /** Sibling of {@link gotoAdminUsers} for the ``/admin/teams`` surface. */
+  async gotoAdminTeams(): Promise<AdminTeamsHarness> {
+    const harness = new AdminTeamsHarness(this.page, this.baseUrl);
+    await harness.goto();
+    return harness;
   }
 }
 
