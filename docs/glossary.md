@@ -46,5 +46,14 @@ translate proper nouns (Dependency-Track, SBOM, CVE, ORT, Trivy, cdxgen).
 | OSI Approved | OSI 승인 | License approved by the Open Source Initiative as conforming to the Open Source Definition. | Open Source Initiative가 오픈소스 정의에 부합한다고 승인한 라이선스. |
 | FSF Free/Libre | FSF 자유 소프트웨어 | License classified by the Free Software Foundation as a free software license. | Free Software Foundation이 자유 소프트웨어 라이선스로 분류한 라이선스. |
 | ORT Match | ORT 매치 | The raw rule-evaluation record ORT emits per finding (rule name, severity, message). | ORT가 발견 항목마다 출력하는 원시 규칙 평가 기록(규칙명·심각도·메시지). |
+| Obligation | 의무사항 | A duty arising from a license (attribution, source disclosure, copyleft, etc.) that must be honored when redistributing the component. | 라이선스가 부여하는 의무(저작자 표시·소스 공개·카피레프트 등). 컴포넌트 재배포 시 반드시 이행해야 합니다. |
+| Obligation kind — Attribution | 의무 종류 — 저작자 표시 | Original copyright notice must be preserved in source and/or user-facing materials. | 원 저작권 고지를 소스 또는 최종 사용자 자료에 보존해야 하는 의무. |
+| Obligation kind — NOTICE preservation | 의무 종류 — NOTICE 보존 | The upstream NOTICE file (Apache-2.0 §4(d) and similar) must be carried with the distribution. | 상위 패키지의 NOTICE 파일(Apache-2.0 §4(d) 등)을 배포물에 함께 포함해야 하는 의무. |
+| Obligation kind — Source disclosure | 의무 종류 — 소스 공개 | Recipients must be granted access to the corresponding source code on demand. | 수령자가 요구할 경우 해당 소스 코드에 접근할 수 있게 해야 하는 의무. |
+| Obligation kind — Copyleft | 의무 종류 — 카피레프트 | Derivative works must be released under the same (or compatible) license terms. | 파생물은 동일(또는 호환) 라이선스로 공개해야 하는 의무. |
+| Obligation kind — Modifications | 의무 종류 — 변경 표시 | Modified files must carry prominent notices stating the changes made. | 변경된 파일에는 변경 사실을 명시한 표시를 두드러지게 남겨야 하는 의무. |
+| Obligation kind — Dynamic linking | 의무 종류 — 동적 링킹 | LGPL-style requirement: end-users must be able to relink against a modified library. | LGPL류의 의무: 최종 사용자가 수정된 라이브러리로 재링크할 수 있어야 함. |
+| Obligation kind — No endorsement | 의무 종류 — 보증 금지 | Project name or contributors may not be used to endorse derivative products without permission. | 허락 없이 프로젝트 이름이나 기여자를 파생 제품 보증에 사용할 수 없음. |
+| NOTICE file | NOTICE 파일 | Generated attribution document listing third-party licenses, components, and obligations from a project's latest scan. | 프로젝트 최근 스캔에서 추출한 제3자 라이선스·컴포넌트·의무사항을 정리한 자동 생성 attribution 문서. |
 
-Updated 2026-05-06 — Phase 3 PR #12 (Licenses tab).
+Updated 2026-05-07 — Phase 3 PR #13 (Obligations tab + NOTICE generator).

@@ -628,6 +628,108 @@ export class PortalPage {
   }
 
   /**
+   * Phase 3 PR #13 — Obligations tab harness verbs.
+   *
+   * Mirrors the licenses-tab verbs: select / wait-ready / multi-filter / row
+   * → drawer / read summary count. Plus a `downloadNotice` verb that wraps
+   * `page.waitForEvent('download')` so callers can assert the file name +
+   * MIME without rolling their own download plumbing per spec.
+   */
+  async selectObligationsTab(): Promise<void> {
+    await this.page.getByTestId("project-detail-tab-obligations").click();
+    await this.page
+      .getByTestId("obligations-tab")
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await this.expectObligationsTabReady();
+  }
+
+  async expectObligationsTabReady(): Promise<void> {
+    const virtual = this.page.getByTestId("obligations-virtual");
+    const empty = this.page.getByTestId("obligations-empty");
+    await expect(virtual.or(empty)).toBeVisible({ timeout: 10_000 });
+  }
+
+  async filterObligationsByKind(kinds: string[]): Promise<void> {
+    await this.page
+      .getByTestId("obligations-kind-filter")
+      .selectOption(kinds);
+    if (kinds.length > 0) {
+      await expect
+        .poll(
+          () =>
+            (new URL(this.page.url()).searchParams.get("kind") ?? "")
+              .split(",")
+              .filter((v) => v.length > 0)
+              .sort()
+              .join(","),
+          { timeout: 5_000 },
+        )
+        .toBe([...kinds].sort().join(","));
+    } else {
+      await expect
+        .poll(() => new URL(this.page.url()).searchParams.get("kind"), {
+          timeout: 5_000,
+        })
+        .toBeNull();
+    }
+    await this.expectObligationsTabReady();
+  }
+
+  /**
+   * Open the obligation drawer for the row whose `data-obligation-id`
+   * matches. The list endpoint returns ids verbatim so the spec can pick
+   * the first row's id and pass it back here for a deterministic open.
+   */
+  async openObligationDrawer(obligationId: string): Promise<void> {
+    const row = this.page.locator(
+      `[data-testid="obligation-row"][data-obligation-id="${obligationId}"]`,
+    );
+    await row.first().click();
+    await this.page
+      .getByTestId("obligation-drawer")
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await expect
+      .poll(() => new URL(this.page.url()).searchParams.get("obligation"), {
+        timeout: 5_000,
+      })
+      .not.toBeNull();
+  }
+
+  async getObligationRowCount(): Promise<number> {
+    const summary = this.page.getByTestId("obligations-summary");
+    if ((await summary.count()) === 0) return 0;
+    const raw = await summary.first().getAttribute("data-total");
+    return raw == null ? 0 : Number(raw);
+  }
+
+  /**
+   * Click the NOTICE download button and wait for the browser download
+   * event. Returns `{ filename, body }` so callers can assert provenance
+   * without snooping the response stream themselves.
+   */
+  async downloadNotice(): Promise<{ filename: string; body: string }> {
+    const downloadPromise = this.page.waitForEvent("download", {
+      timeout: 15_000,
+    });
+    await this.page.getByTestId("obligations-download-notice").click();
+    const download = await downloadPromise;
+    const fs = await import("node:fs/promises");
+    const path = await download.path();
+    const body = path
+      ? await fs.readFile(path, "utf-8")
+      : await (async () => {
+          const buf = await download.createReadStream();
+          if (!buf) return "";
+          let out = "";
+          for await (const chunk of buf) {
+            out += chunk.toString();
+          }
+          return out;
+        })();
+    return { filename: download.suggestedFilename(), body };
+  }
+
+  /**
    * Drive a status transition from inside the open drawer.
    *
    * Optionally fills the justification textarea, then clicks the action

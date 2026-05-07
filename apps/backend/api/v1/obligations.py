@@ -1,0 +1,289 @@
+"""
+Obligations API — Phase 3 PR #13 (Obligations tab + NOTICE generator).
+
+Three read-only endpoints, all project-scoped:
+
+  GET /v1/projects/{project_id}/obligations
+      Per-(license, kind) rows + per-kind distribution for the latest scan.
+  GET /v1/projects/{project_id}/obligations/{obligation_id}
+      Drawer detail (license + obligation text + affected components).
+  GET /v1/projects/{project_id}/notice
+      NOTICE attribution body. Defaults to text/plain inline; pass
+      ``download=true`` for an attachment ``Content-Disposition``, or
+      ``format=markdown`` for a markdown variant.
+
+Why read-only?
+--------------
+Obligations are a per-license policy catalog: the row carries no analyst
+workflow state, no transition matrix, no audit log. Authority lives upstream
+(ORT rule packs, future SPDX exception ingestion, manual catalog edits via
+admin tooling), not in user-facing PATCH endpoints. Mirrors the Licenses
+tab (PR #12).
+
+Cross-team policy
+-----------------
+- List + Notice: 403 on cross-team. The project's existence is not a secret
+  across teams (PR #10 / PR #12 pattern).
+- Detail: 404 on cross-team. The URL exposes both project_id and
+  obligation_id, so we existence-hide cross-team reads to avoid leaking that
+  a given catalog row is in use elsewhere.
+
+All cross-team rejections emit ``log.warning("authz.cross_team_attempt", ...)``
+in the service layer *before* raising, so SOC tooling sees the rejection
+regardless of the HTTP status the caller observes.
+
+All 4xx/5xx responses are RFC 7807 ``application/problem+json``.
+"""
+
+from __future__ import annotations
+
+import re
+import uuid
+
+import structlog
+from fastapi import APIRouter, Depends, Query, Request, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.db import get_db
+from core.errors import problem_response
+from core.security import CurrentUser, require_role
+from schemas.obligation_detail import (
+    AffectedComponentByObligation,
+    ObligationDetailResponse,
+    ObligationListItem,
+    ObligationListResponse,
+)
+from services.obligation_service import (
+    ObligationError,
+    generate_notice,
+    get_obligation_detail,
+    list_project_obligations,
+)
+from services.project_service import ProjectError
+
+router = APIRouter(prefix="/v1", tags=["obligations"])
+log = structlog.get_logger("obligations.api")
+
+
+# ---------------------------------------------------------------------------
+# Error translation helper
+# ---------------------------------------------------------------------------
+
+
+def _problem_for_obligation_error(
+    request: Request,
+    exc: ProjectError,
+) -> Response:
+    """Convert an obligation/project domain exception into a Problem Details response."""
+    return problem_response(
+        status_code=exc.status_code,
+        title=exc.title,
+        detail=str(exc) or exc.title,
+        instance=request.url.path,
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/projects/{project_id}/obligations
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/projects/{project_id}/obligations",
+    response_model=ObligationListResponse,
+    summary="Per-(license, kind) obligation rows + distribution for the project's latest scan",
+)
+async def list_project_obligations_endpoint(
+    request: Request,
+    project_id: uuid.UUID,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    kind: list[str] | None = Query(default=None),
+    category: list[str] | None = Query(default=None),
+    search: str | None = Query(default=None, max_length=255),
+    sort: str = Query(
+        default="category",
+        pattern=r"^(category|license_name|kind|affected_count)$",
+    ),
+    order: str = Query(default="desc", pattern=r"^(asc|desc)$"),
+    session: AsyncSession = Depends(get_db),
+    actor: CurrentUser = Depends(require_role("developer")),
+) -> Response:
+    try:
+        items, distribution, total = await list_project_obligations(
+            session,
+            project_id=project_id,
+            actor=actor,
+            limit=limit,
+            offset=offset,
+            kinds=kind,
+            categories=category,
+            search=search,
+            sort=sort,
+            order=order,
+        )
+    except (ObligationError, ProjectError) as exc:
+        return _problem_for_obligation_error(request, exc)
+
+    body = ObligationListResponse(
+        items=[ObligationListItem.model_validate(item) for item in items],
+        distribution=distribution,
+        total=total,
+    )
+    return Response(
+        content=body.model_dump_json(),
+        status_code=status.HTTP_200_OK,
+        media_type="application/json",
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/projects/{project_id}/obligations/{obligation_id}
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/projects/{project_id}/obligations/{obligation_id}",
+    response_model=ObligationDetailResponse,
+    summary="Obligation drawer payload (404 if invisible to caller within this project)",
+    responses={
+        404: {
+            "description": (
+                "Obligation does not exist, exists in a team the caller "
+                "cannot access, or is not surfaced by the project's latest "
+                "scan. Returned in lieu of 403 to avoid leaking existence."
+            ),
+        },
+    },
+)
+async def get_obligation_endpoint(
+    request: Request,
+    project_id: uuid.UUID,
+    obligation_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+    actor: CurrentUser = Depends(require_role("developer")),
+) -> Response:
+    try:
+        payload = await get_obligation_detail(
+            session,
+            project_id=project_id,
+            obligation_id=obligation_id,
+            actor=actor,
+        )
+    except (ObligationError, ProjectError) as exc:
+        return _problem_for_obligation_error(request, exc)
+
+    body = ObligationDetailResponse(
+        id=payload["id"],
+        license_id=payload["license_id"],
+        license_spdx_id=payload["license_spdx_id"],
+        license_name=payload["license_name"],
+        license_category=payload["license_category"],
+        license_reference_url=payload["license_reference_url"],
+        kind=payload["kind"],
+        text=payload["text"],
+        link=payload["link"],
+        affected_components=[
+            AffectedComponentByObligation.model_validate(c)
+            for c in payload["affected_components"]
+        ],
+        created_at=payload["created_at"],
+        updated_at=payload["updated_at"],
+    )
+    return Response(
+        content=body.model_dump_json(),
+        status_code=status.HTTP_200_OK,
+        media_type="application/json",
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/projects/{project_id}/notice
+# ---------------------------------------------------------------------------
+
+# Defense-in-depth: the project name flows into Content-Disposition's filename
+# parameter when ``download=true``. Quote it conservatively — RFC 6266 allows
+# UTF-8 via ``filename*=UTF-8''…`` but we want to keep the ASCII fallback
+# free of CR/LF and quoting metacharacters, so we strip everything outside
+# ``[A-Za-z0-9._-]`` and fall back to ``NOTICE`` if the result is empty.
+_FILENAME_SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _safe_filename_token(name: str) -> str:
+    token = _FILENAME_SAFE_RE.sub("-", name).strip("-")
+    return token or "project"
+
+
+@router.get(
+    "/projects/{project_id}/notice",
+    summary="Compose a NOTICE attribution body for the project's latest scan",
+    responses={
+        200: {
+            "description": (
+                "Plain text (or markdown) NOTICE body. ``Content-Disposition`` "
+                "is set to ``attachment`` when ``download=true``; otherwise "
+                "the body streams inline."
+            ),
+            "content": {
+                "text/plain": {},
+                "text/markdown": {},
+            },
+        },
+        403: {"description": "Caller is not a member of the project's team."},
+        404: {"description": "Project does not exist."},
+    },
+)
+async def get_project_notice_endpoint(
+    request: Request,
+    project_id: uuid.UUID,
+    fmt: str = Query(
+        default="text",
+        alias="format",
+        pattern=r"^(text|markdown)$",
+        description=(
+            "Output format. ``text`` returns text/plain, ``markdown`` returns text/markdown."
+        ),
+    ),
+    download: bool = Query(
+        default=False,
+        description=(
+            "When true, set ``Content-Disposition: attachment`` so browsers "
+            "save the body as a file. Default is inline."
+        ),
+    ),
+    session: AsyncSession = Depends(get_db),
+    actor: CurrentUser = Depends(require_role("developer")),
+) -> Response:
+    try:
+        payload = await generate_notice(
+            session,
+            project_id=project_id,
+            actor=actor,
+            fmt=fmt,
+        )
+    except (ObligationError, ProjectError) as exc:
+        return _problem_for_obligation_error(request, exc)
+
+    media_type = "text/plain; charset=utf-8" if fmt == "text" else "text/markdown; charset=utf-8"
+    headers = {
+        "X-Notice-Generated-At": payload["generated_at"]
+        .replace(microsecond=0)
+        .isoformat(),
+        "X-Notice-License-Count": str(payload["license_count"]),
+        "X-Notice-Obligation-Count": str(payload["obligation_count"]),
+    }
+    if download:
+        ext = "md" if fmt == "markdown" else "txt"
+        token = _safe_filename_token(payload["project_name"])
+        headers["Content-Disposition"] = (
+            f'attachment; filename="NOTICE-{token}.{ext}"'
+        )
+    return Response(
+        content=payload["body"],
+        status_code=status.HTTP_200_OK,
+        media_type=media_type,
+        headers=headers,
+    )
+
+
+__all__ = ["router"]

@@ -10,13 +10,8 @@
     "overview": "개요",
     "components": "컴포넌트",
     "vulnerabilities": "취약점",
-    "licenses": "라이선스"
-  },
-  "tabs_placeholder": {
-    "licenses": {
-      "title": "라이선스 탭",
-      "subtitle": "준비 중 — PR #12에서 추가됩니다."
-    }
+    "licenses": "라이선스",
+    "obligations": "의무사항"
   },
   "severity": {
     "critical": "치명",
@@ -325,6 +320,73 @@
         "kind_label": "분류"
       },
       "cross_link_component": "컴포넌트 보기"
+    }
+  },
+  "obligations": {
+    "summary": "{{total}}개 중 {{loaded}}개 표시",
+    "distribution": {
+      "label": "종류별"
+    },
+    "kind": {
+      "attribution": "저작자 표시",
+      "notice": "NOTICE 보존",
+      "source-disclosure": "소스 공개",
+      "copyleft": "카피레프트",
+      "modifications": "변경 표시",
+      "dynamic-linking": "동적 링킹",
+      "no-endorsement": "보증 금지"
+    },
+    "column": {
+      "spdx_id": "SPDX",
+      "license_name": "라이선스",
+      "category": "분류",
+      "kind": "종류",
+      "affected_count": "컴포넌트"
+    },
+    "toolbar": {
+      "search_label": "검색",
+      "search_placeholder": "SPDX, 라이선스명, 종류, 본문 검색…",
+      "filter_kind": "종류",
+      "filter_category": "분류",
+      "sort_label": "정렬 기준",
+      "sort": {
+        "category": "라이선스 분류",
+        "license_name": "라이선스명",
+        "kind": "의무 종류",
+        "affected_count": "영향 컴포넌트"
+      },
+      "order_label": "정렬 순서",
+      "order_asc": "오름차순",
+      "order_desc": "내림차순",
+      "notice_label": "NOTICE 파일",
+      "notice_download": "NOTICE 다운로드",
+      "notice_downloading": "생성 중…"
+    },
+    "empty": {
+      "title": "기록된 의무사항 없음",
+      "description": "이 프로젝트의 최근 스캔에서 카탈로그 의무사항이 발견되지 않았습니다. 스캔을 실행하거나 라이선스 카탈로그를 시드하여 채워 주세요."
+    },
+    "errors": {
+      "load_list": "의무사항 목록을 불러오지 못했습니다.",
+      "load_detail": "이 의무사항을 불러오지 못했습니다."
+    },
+    "drawer": {
+      "title": "의무: {{kind}}",
+      "subtitle": "{{license}} 에 부속",
+      "loading_title": "의무사항 불러오는 중…",
+      "loading_subtitle": "카탈로그 정보를 가져옵니다.",
+      "metadata": {
+        "license_label": "라이선스",
+        "license_reference_label": "라이선스 참조",
+        "reference_label": "참조"
+      },
+      "section": {
+        "obligation": "의무사항",
+        "affected": "영향 컴포넌트 ({{count}})"
+      },
+      "affected": {
+        "empty": "최근 스캔에 영향 컴포넌트가 없습니다."
+      }
     }
   }
 }

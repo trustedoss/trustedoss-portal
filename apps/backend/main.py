@@ -25,6 +25,7 @@ from api.v1 import (
     auth_router,
     components_router,
     licenses_router,
+    obligations_router,
     projects_router,
     scans_router,
     vulnerabilities_router,
@@ -115,6 +116,7 @@ app.include_router(scans_router)
 app.include_router(components_router)
 app.include_router(vulnerabilities_router)
 app.include_router(licenses_router)
+app.include_router(obligations_router)
 # Phase 2 PR #9: WebSocket gateway. The router declares the absolute path
 # `/ws/scans/{scan_id}` (no prefix) so future ws routes can group themselves
 # under the same router without nudging this include.
