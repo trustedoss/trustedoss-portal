@@ -30,12 +30,12 @@ def no_throttle(monkeypatch: pytest.MonkeyPatch) -> None:
     a no-op so each MockTransport-driven assertion stays deterministic
     and fast.
     """
-    import integrations.license_fetcher.base as base_mod
-
     # Replace the ``time`` module in the base module's namespace with
     # a stub whose ``.sleep`` is a no-op. ``monotonic`` still needs to
     # advance, so we delegate to the real implementation.
     import time as real_time
+
+    import integrations.license_fetcher.base as base_mod
 
     class _NoSleepTime:
         @staticmethod
