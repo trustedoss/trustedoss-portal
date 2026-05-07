@@ -20,6 +20,21 @@ export interface AdminToastMessage {
   id: number;
   text: string;
   tone: AdminToastTone;
+  /**
+   * Phase 4 PR #13. Stable, locale-independent identifier for the toast.
+   * Surfaces as ``data-toast-key`` so e2e tests can assert on which
+   * invariant produced the toast without depending on translated copy.
+   *
+   * Successful mutations: ``role_updated`` | ``deactivated`` | ``activated``
+   * | ``password_reset_sent`` | ``created`` | ``updated`` | ``deleted`` |
+   * ``member_added`` | ``member_removed``.
+   *
+   * Errors: the snake_case extension from the backend Problem payload —
+   * ``last_super_admin_protected`` | ``cannot_modify_self`` |
+   * ``last_team_admin_protected`` | ``team_has_active_scans`` |
+   * ``invalid_role_assignment`` | ``slug_conflict`` | ``unknown``.
+   */
+  key?: string;
 }
 
 interface AdminToastProps {
@@ -42,6 +57,7 @@ export function AdminToast({ message, onDismiss, ttlMs = 4000 }: AdminToastProps
       className="fixed bottom-4 right-4 z-50 max-w-sm"
       data-testid="admin-toast"
       data-tone={message.tone}
+      data-toast-key={message.key ?? ""}
     >
       <Alert
         variant={message.tone === "error" ? "destructive" : "default"}

@@ -48,3 +48,26 @@ export function adminErrorMessageKey(err: unknown): string {
   if (err.status === 409) return "admin.errors.slug_conflict";
   return "admin.errors.unknown";
 }
+
+/**
+ * Identify the snake_case extension token surfaced by the backend Problem
+ * payload — used by the toast/alert markup so e2e tests can assert on the
+ * specific invariant without depending on translated copy.
+ *
+ * Returns ``"slug_conflict"`` for the only 409 case, ``"unknown"`` when no
+ * known extension is present.
+ */
+export function adminErrorExtension(err: unknown): string {
+  if (!(err instanceof ProblemError)) {
+    return "unknown";
+  }
+  const problem = err.problem;
+  if (problem) {
+    const extras = problem as unknown as Record<string, unknown>;
+    for (const [field] of EXTENSION_KEY_MAP) {
+      if (extras[field] === true) return field;
+    }
+  }
+  if (err.status === 409) return "slug_conflict";
+  return "unknown";
+}

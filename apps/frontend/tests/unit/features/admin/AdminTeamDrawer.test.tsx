@@ -125,7 +125,11 @@ describe("AdminTeamDrawer", () => {
     const args = mockedUpdate.mock.calls[0];
     expect(args[0]).toBe("t1");
     expect((args[1] as { name?: string }).name).toBe("Renamed");
-    expect(notify).toHaveBeenCalledWith(expect.any(String), "success");
+    expect(notify).toHaveBeenCalledWith(
+      expect.any(String),
+      "success",
+      expect.any(String),
+    );
   });
 
   it("opens the add-member form and posts a new membership", async () => {
@@ -169,6 +173,10 @@ describe("AdminTeamDrawer", () => {
       expect(mockedDelete).toHaveBeenCalledWith("t1");
     });
     expect(onDeleted).toHaveBeenCalled();
-    expect(notify).toHaveBeenCalledWith(expect.any(String), "success");
+    expect(notify).toHaveBeenCalledWith(
+      expect.any(String),
+      "success",
+      expect.any(String),
+    );
   });
 });

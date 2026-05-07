@@ -34,14 +34,17 @@ import {
 } from "@/features/admin/api/useAdminTeamMutations";
 import { useAdminTeam } from "@/features/admin/api/useAdminTeams";
 import type { TeamMembershipRole } from "@/features/admin/api/adminUsersApi";
-import { adminErrorMessageKey } from "@/features/admin/lib/adminErrorMessage";
+import {
+  adminErrorExtension,
+  adminErrorMessageKey,
+} from "@/features/admin/lib/adminErrorMessage";
 import { cn } from "@/lib/utils";
 
 interface AdminTeamDrawerProps {
   open: boolean;
   teamId: string | null;
   onOpenChange: (open: boolean) => void;
-  notify: (text: string, tone: "success" | "error") => void;
+  notify: (text: string, tone: "success" | "error", key?: string) => void;
   /**
    * Called after a successful delete so the parent page can clear its
    * selection and let the list query re-render.
@@ -105,9 +108,9 @@ export function AdminTeamDrawer({
         },
       });
       setShowEditForm(false);
-      notify(t("admin.teams.toast.updated"), "success");
+      notify(t("admin.teams.toast.updated"), "success", "updated");
     } catch (err) {
-      notify(t(adminErrorMessageKey(err)), "error");
+      notify(t(adminErrorMessageKey(err)), "error", adminErrorExtension(err));
     }
   }
 
@@ -115,12 +118,12 @@ export function AdminTeamDrawer({
     if (!detail.data) return;
     try {
       await del.mutateAsync({ teamId: detail.data.id });
-      notify(t("admin.teams.toast.deleted"), "success");
+      notify(t("admin.teams.toast.deleted"), "success", "deleted");
       setConfirm(null);
       onDeleted?.();
       onOpenChange(false);
     } catch (err) {
-      notify(t(adminErrorMessageKey(err)), "error");
+      notify(t(adminErrorMessageKey(err)), "error", adminErrorExtension(err));
     }
   }
 
@@ -137,9 +140,9 @@ export function AdminTeamDrawer({
       });
       setShowAddMember(false);
       setMemberUserId("");
-      notify(t("admin.teams.toast.member_added"), "success");
+      notify(t("admin.teams.toast.member_added"), "success", "member_added");
     } catch (err) {
-      notify(t(adminErrorMessageKey(err)), "error");
+      notify(t(adminErrorMessageKey(err)), "error", adminErrorExtension(err));
     }
   }
 
@@ -147,10 +150,10 @@ export function AdminTeamDrawer({
     if (!detail.data) return;
     try {
       await remove.mutateAsync({ teamId: detail.data.id, userId });
-      notify(t("admin.teams.toast.member_removed"), "success");
+      notify(t("admin.teams.toast.member_removed"), "success", "member_removed");
       setConfirm(null);
     } catch (err) {
-      notify(t(adminErrorMessageKey(err)), "error");
+      notify(t(adminErrorMessageKey(err)), "error", adminErrorExtension(err));
     }
   }
 
@@ -386,6 +389,8 @@ export function AdminTeamDrawer({
                         )}
                         data-testid="admin-team-member-row"
                         data-user-id={m.user_id}
+                        data-email={m.email}
+                        data-role={m.role}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0">

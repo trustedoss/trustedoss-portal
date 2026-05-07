@@ -114,7 +114,11 @@ describe("AdminUserDrawer", () => {
     const payload = args[1] as RoleUpdatePayload;
     expect(args[0]).toBe("u1");
     expect(payload.role).toBe("super_admin");
-    expect(notify).toHaveBeenCalledWith(expect.any(String), "success");
+    expect(notify).toHaveBeenCalledWith(
+      expect.any(String),
+      "success",
+      expect.any(String),
+    );
   });
 
   it("requires confirmation before deactivating, then dispatches the mutation", async () => {
@@ -132,7 +136,11 @@ describe("AdminUserDrawer", () => {
     await waitFor(() => {
       expect(mockedDeactivate).toHaveBeenCalledWith("u1");
     });
-    expect(notify).toHaveBeenCalledWith(expect.any(String), "success");
+    expect(notify).toHaveBeenCalledWith(
+      expect.any(String),
+      "success",
+      expect.any(String),
+    );
   });
 
   it("emits a success notification on password reset", async () => {
@@ -147,6 +155,10 @@ describe("AdminUserDrawer", () => {
     await waitFor(() => {
       expect(mockedReset).toHaveBeenCalledWith("u1");
     });
-    expect(notify).toHaveBeenCalledWith(expect.any(String), "success");
+    expect(notify).toHaveBeenCalledWith(
+      expect.any(String),
+      "success",
+      expect.any(String),
+    );
   });
 });

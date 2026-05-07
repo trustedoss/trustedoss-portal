@@ -81,9 +81,9 @@ export function AdminUsersPage() {
   const total = usersQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  function notify(text: string, tone: "success" | "error") {
+  function notify(text: string, tone: "success" | "error", key?: string) {
     toastSeq.current += 1;
-    setToast({ id: toastSeq.current, text, tone });
+    setToast({ id: toastSeq.current, text, tone, key });
   }
 
   return (
@@ -154,6 +154,9 @@ export function AdminUsersPage() {
                     key={u.id}
                     data-testid="admin-users-row"
                     data-user-id={u.id}
+                    data-email={u.email}
+                    data-role={deriveRole(u)}
+                    data-active={u.is_active}
                     className={cn(
                       "cursor-pointer border-b transition-colors hover:bg-accent/40 focus-within:bg-accent/40",
                     )}

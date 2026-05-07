@@ -41,7 +41,10 @@ import {
 } from "@/features/admin/api/useAdminUserMutations";
 import type { UserRole } from "@/features/admin/api/adminUsersApi";
 import { RoleBadge } from "@/features/admin/components/RoleBadge";
-import { adminErrorMessageKey } from "@/features/admin/lib/adminErrorMessage";
+import {
+  adminErrorExtension,
+  adminErrorMessageKey,
+} from "@/features/admin/lib/adminErrorMessage";
 import { formatRelativeToNow } from "@/lib/relativeTime";
 import { cn } from "@/lib/utils";
 
@@ -50,9 +53,11 @@ interface AdminUserDrawerProps {
   userId: string | null;
   onOpenChange: (open: boolean) => void;
   /**
-   * Surface a tone-aware message to the parent (toast surface).
+   * Surface a tone-aware message to the parent (toast surface). The optional
+   * ``key`` is a locale-independent identifier for the toast — e2e tests
+   * assert on it via ``data-toast-key`` instead of the translated copy.
    */
-  notify: (text: string, tone: "success" | "error") => void;
+  notify: (text: string, tone: "success" | "error", key?: string) => void;
 }
 
 type ConfirmKind = "deactivate" | "activate" | "reset_password" | null;
@@ -116,9 +121,9 @@ export function AdminUserDrawer({
         },
       });
       setShowRoleForm(false);
-      notify(t("admin.users.toast.role_updated"), "success");
+      notify(t("admin.users.toast.role_updated"), "success", "role_updated");
     } catch (err) {
-      notify(t(adminErrorMessageKey(err)), "error");
+      notify(t(adminErrorMessageKey(err)), "error", adminErrorExtension(err));
     }
   }
 
@@ -126,10 +131,10 @@ export function AdminUserDrawer({
     if (!detail.data) return;
     try {
       await deactivate.mutateAsync({ userId: detail.data.id });
-      notify(t("admin.users.toast.deactivated"), "success");
+      notify(t("admin.users.toast.deactivated"), "success", "deactivated");
       setConfirm(null);
     } catch (err) {
-      notify(t(adminErrorMessageKey(err)), "error");
+      notify(t(adminErrorMessageKey(err)), "error", adminErrorExtension(err));
     }
   }
 
@@ -137,10 +142,10 @@ export function AdminUserDrawer({
     if (!detail.data) return;
     try {
       await activate.mutateAsync({ userId: detail.data.id });
-      notify(t("admin.users.toast.activated"), "success");
+      notify(t("admin.users.toast.activated"), "success", "activated");
       setConfirm(null);
     } catch (err) {
-      notify(t(adminErrorMessageKey(err)), "error");
+      notify(t(adminErrorMessageKey(err)), "error", adminErrorExtension(err));
     }
   }
 
@@ -148,10 +153,14 @@ export function AdminUserDrawer({
     if (!detail.data) return;
     try {
       await reset.mutateAsync({ userId: detail.data.id });
-      notify(t("admin.users.toast.password_reset_sent"), "success");
+      notify(
+        t("admin.users.toast.password_reset_sent"),
+        "success",
+        "password_reset_sent",
+      );
       setConfirm(null);
     } catch (err) {
-      notify(t(adminErrorMessageKey(err)), "error");
+      notify(t(adminErrorMessageKey(err)), "error", adminErrorExtension(err));
     }
   }
 

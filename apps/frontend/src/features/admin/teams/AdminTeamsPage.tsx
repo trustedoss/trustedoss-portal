@@ -23,7 +23,10 @@ import { useCreateTeam } from "@/features/admin/api/useAdminTeamMutations";
 import { useAdminTeams } from "@/features/admin/api/useAdminTeams";
 import { AdminToast, type AdminToastMessage } from "@/features/admin/components/AdminToast";
 import { AdminTeamDrawer } from "@/features/admin/teams/AdminTeamDrawer";
-import { adminErrorMessageKey } from "@/features/admin/lib/adminErrorMessage";
+import {
+  adminErrorExtension,
+  adminErrorMessageKey,
+} from "@/features/admin/lib/adminErrorMessage";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
@@ -71,9 +74,9 @@ export function AdminTeamsPage() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const create = useCreateTeam();
 
-  function notify(text: string, tone: "success" | "error") {
+  function notify(text: string, tone: "success" | "error", key?: string) {
     toastSeq.current += 1;
-    setToast({ id: toastSeq.current, text, tone });
+    setToast({ id: toastSeq.current, text, tone, key });
   }
 
   async function handleCreate() {
@@ -88,12 +91,12 @@ export function AdminTeamsPage() {
       setCreateName("");
       setCreateSlug("");
       setCreateDescription("");
-      notify(t("admin.teams.toast.created"), "success");
+      notify(t("admin.teams.toast.created"), "success", "created");
       // Open the freshly-created team's drawer so the admin can immediately
       // add members.
       setOpenTeamId(created.id);
     } catch (err) {
-      notify(t(adminErrorMessageKey(err)), "error");
+      notify(t(adminErrorMessageKey(err)), "error", adminErrorExtension(err));
     }
   }
 
@@ -249,6 +252,8 @@ export function AdminTeamsPage() {
                     key={team.id}
                     data-testid="admin-teams-row"
                     data-team-id={team.id}
+                    data-team-name={team.name}
+                    data-team-slug={team.slug}
                     className={cn(
                       "cursor-pointer border-b transition-colors hover:bg-accent/40 focus-within:bg-accent/40",
                     )}
