@@ -240,6 +240,24 @@ async def password_reset_endpoint(
     Phase 6 PR #18 will wire the SMTP / Slack delivery channel. Until then
     the plaintext token is generated, persisted as a hash, audit-logged via
     the listener (which masks the hash to ``***``), and discarded.
+
+    -- Account-enumeration semantics (security-reviewer F5) -------------------
+
+    This endpoint returns 404 when ``user_id`` does not exist. That IS an
+    enumeration oracle in isolation, but it is acceptable HERE because the
+    route is super-admin-gated by ``require_super_admin_or_404`` — any
+    caller who can reach this code path is already authorised to read the
+    full user list (``GET /v1/admin/users``), so the 404 leaks no
+    information they did not already have. The trust boundary is ABOVE this
+    endpoint, not at it.
+
+    The Phase 6 PR #18 PUBLIC password-reset flow ("forgot password") MUST
+    NOT copy this 404-on-miss pattern. That endpoint is unauthenticated, so
+    a 404 vs. 204 split there would let an attacker enumerate registered
+    emails (CWE-204 Observable Response Discrepancy). The public flow
+    returns a uniform 204 regardless of whether the email exists, with the
+    actual reset email sent only when a match is found. See
+    ``docs/v2-execution-plan.md`` §3.7 for the Phase 6 contract.
     """
     try:
         reset_token_id = await initiate_password_reset(session, actor=actor, user_id=user_id)
