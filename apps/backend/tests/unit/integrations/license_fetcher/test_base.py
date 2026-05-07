@@ -57,6 +57,21 @@ def test_normalize_spdx_known_aliases(raw: str, expected: str) -> None:
         # SPDX id when the licence requires both is unsound.
         "BSD-3-Clause AND MIT",
         "totally-not-a-license-name",
+        # security-reviewer High (chore PR #7) — bare separator tokens
+        # would otherwise infinite-recurse.
+        "WITH",
+        "OR",
+        "WITH WITH",
+        "OR OR OR",
+        "OR WITH",
+        "WITH OR",
+        # security-reviewer Medium #2 (chore PR #7) — adversarial
+        # payloads must not pass the verbatim-SPDX-id heuristic.
+        "javascript:alert(1)",
+        "a:b",
+        "<x>1</x>",
+        "../etc/passwd",
+        "id;DROP TABLE",
     ],
 )
 def test_normalize_spdx_rejects_unmappable(raw: str | None) -> None:

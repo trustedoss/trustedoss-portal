@@ -32,6 +32,7 @@ Design notes
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -40,6 +41,11 @@ from typing import Protocol
 
 import httpx
 import structlog
+
+# SPDX 3.x licence-id token shape — ASCII letters/digits + ``-`` ``.``
+# ``+``. Anchored so partial matches do not slip through. Used inside
+# ``normalize_spdx_id`` to gate the "verbatim SPDX id" passthrough.
+_SPDX_ID_TOKEN_RE = re.compile(r"\A[A-Za-z][A-Za-z0-9.+\-]*\Z")
 
 log = structlog.get_logger("integrations.license_fetcher")
 
@@ -377,39 +383,44 @@ def normalize_spdx_id(raw: str | None) -> str | None:
     if aliased is not None:
         return aliased
     upper_padded = f" {candidate.upper()} "
+    upper_candidate = candidate.upper()
     # AND is the only compound we reject outright.
     if " AND " in upper_padded:
         return None
-    # OR — pick the first token that normalises successfully. Recursion
-    # handles nested aliases (e.g. ``"Apache 2.0 OR MIT"`` → first
-    # token ``"Apache 2.0"`` → alias hit).
+    # OR — pick the first token that normalises successfully. The
+    # self-reference guard (token == candidate) is critical: a bare
+    # ``"OR"`` input would otherwise trip an infinite recursion via
+    # ``_split_compound("OR", " OR ")`` → ``["OR"]`` → recurse.
+    # security-reviewer High (chore PR #7).
     if " OR " in upper_padded:
         for token in _split_compound(candidate, " OR "):
+            if token.upper() == upper_candidate:
+                # Bare separator or self-reference — would loop forever.
+                continue
             normalised = normalize_spdx_id(token)
             if normalised is not None:
                 return normalised
         return None
-    # WITH — take the base license, drop the exception.
+    # WITH — take the base license, drop the exception. Same guard:
+    # ``"WITH"`` and ``"WITH WITH"`` would otherwise recurse forever.
     if " WITH " in upper_padded:
         pieces = _split_compound(candidate, " WITH ")
-        if not pieces:
+        if not pieces or pieces[0].upper() == upper_candidate:
             return None
         return normalize_spdx_id(pieces[0])
-    # 2) Looks like an SPDX id verbatim — short, no whitespace, well-formed
-    # token shape (`Foo-1.2`, `BSD-3-Clause`, `Python-2.0`). We accept the
-    # candidate as-is so previously-canonical ids round-trip cleanly. To
-    # avoid swallowing bare free-text strings that happen to be short and
-    # alphanumeric (e.g. ``"Custom"`` or ``"totally-not-a-license-name"``),
-    # we require the candidate to contain at least one digit (every real
-    # SPDX id with a version does — Apache-2.0, BSD-3-Clause, GPL-2.0-only)
-    # OR be one of a small list of well-known identifier-only ids.
+    # 2) Looks like an SPDX id verbatim — strict charset to avoid
+    # accepting attacker payloads as licence ids. SPDX 3.x ids use
+    # ASCII letters / digits / ``-`` / ``.`` / ``+`` only; anything
+    # outside that set (``:`` / ``<`` / ``/`` / ``\x00`` / unicode)
+    # would otherwise leak through into ``licenses.spdx_id`` and on
+    # into Excel / PDF / SBOM exports. security-reviewer Medium #2
+    # (chore PR #7).
     _BARE_SPDX_IDS = {"MIT", "ISC", "Zlib", "WTFPL", "0BSD", "Unlicense"}
     if candidate in _BARE_SPDX_IDS:
         return candidate
     if (
-        " " not in candidate
-        and "/" not in candidate
-        and len(candidate) <= 64
+        len(candidate) <= 64
+        and _SPDX_ID_TOKEN_RE.match(candidate) is not None
         and any(ch.isdigit() for ch in candidate)
         and any(ch.isalpha() for ch in candidate)
     ):

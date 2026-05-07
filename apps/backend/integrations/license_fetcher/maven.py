@@ -191,11 +191,13 @@ class MavenLicenseFetcher:
         # security-reviewer Medium #2 (chore PR #7) — POM ``<url>`` is
         # attacker-controlled metadata. Even with SPDX normalisation
         # succeeding, the URL itself is whatever the publisher put in
-        # the POM and may point to a phishing or malware host. The
-        # frontend ``LicenseDrawer`` already has an SPDX id → spdx.org
-        # fallback, so we never need the registry-provided link to
-        # render a usable license panel. Dropping it uniformly across
-        # all four fetchers keeps the rendering contract simple.
+        # the POM and may point to a phishing or malware host. We drop
+        # it here uniformly across all four fetchers; a follow-up PR
+        # will land an SPDX id → spdx.org/licenses/<id>.html fallback
+        # in ``LicenseDrawer.tsx`` so the frontend keeps a clickable
+        # license link. Until then the licence panel renders without
+        # an external link, which is strictly safer than a phishing
+        # URL.
         del ref_url
         return LicenseFetchResult(
             spdx_id=spdx,

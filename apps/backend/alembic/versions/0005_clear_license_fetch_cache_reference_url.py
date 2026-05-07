@@ -46,6 +46,23 @@ Rollback:
   - ``downgrade()`` raises ``NotImplementedError`` per the forward-only
     policy. The cleared URLs are intentionally unrecoverable — the
     security review asked us to drop them.
+
+Deploy ordering (security-reviewer Low, chore PR #7):
+  - Roll the worker pods to the chore PR #7 image **first** (so all
+    fetcher writes set ``reference_url=None``), then run this
+    migration. With Docker Compose::
+
+        docker-compose -f docker-compose.yml up -d --no-deps celery-worker
+        # wait for the new worker to drain old tasks (~scan timeout)
+        docker-compose -f docker-compose.yml exec backend alembic upgrade head
+
+    Reversed ordering opens a small race window where an old worker
+    can re-write a phishing URL between the UPDATE and the worker
+    rollout completing. The risk is operationally bounded (<1 min on
+    a normal rollout) but we document the ordering for completeness.
+  - The Helm chart upgrade hook (chore PR #8 candidate) should encode
+    this ordering as a pre-install init job that waits for worker
+    rollout completion.
 """
 
 from __future__ import annotations
