@@ -273,10 +273,15 @@ def test_workspace_path_with_embedded_null_handled_at_probe(
             "asyncpg.exceptions.CannotConnectNowError: postgresql://admin:s3cr3t@db:5432/trustedoss",
             "asyncpg.exceptions.CannotConnectNowError: postgresql://****@db:5432/trustedoss",
         ),
-        # redis-py with password in URL
+        # redis-py with password-only URL (empty username) — G4 regression
         (
             "ConnectionError: Error connecting to redis://:mypassword@redis:6379",
             "ConnectionError: Error connecting to redis://****@redis:6379",
+        ),
+        # rediss:// (TLS) with empty username
+        (
+            "ConnectionError: rediss://:secretpass@tls-host:6380",
+            "ConnectionError: rediss://****@tls-host:6380",
         ),
         # URL with user:pass pair
         (

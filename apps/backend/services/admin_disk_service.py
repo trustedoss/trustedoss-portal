@@ -55,7 +55,7 @@ log = structlog.get_logger("admin.disk.service")
 # in the exception message.
 _CREDENTIAL_PATTERN = re.compile(
     r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+\-.]*://)"
-    r"(?:[^:@/\s]+:[^@/\s]+@)",
+    r"(?:[^:@/\s]*:[^@/\s]+@)",  # * for username: handles redis://:pass@host
     re.IGNORECASE,
 )
 

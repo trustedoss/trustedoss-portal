@@ -148,18 +148,17 @@ def dt_orphan_cleanup_task(self: Any, dt_project_uuids: list[str]) -> dict[str, 
 
     finally:
         client.close()
-        # G2 (CWE-362): release the lock only on terminal completion, not on
-        # Celery autoretry.  self.retry() raises celery.exceptions.Retry which
-        # propagates through this finally block; if we deleted the lock here, a
-        # second concurrent invocation could start before the retry fires,
-        # creating a race window.  We detect the in-flight Retry and skip the
-        # delete so the lock stays held for the duration of the logical run.
+        # G2 (CWE-362): release the lock only on terminal completion, not when
+        # the task is about to be retried by autoretry_for=(DTUnavailable,).
+        # With autoretry_for, when DTUnavailable is raised inside the try body
+        # Python enters this finally block with sys.exc_info()[1] == DTUnavailable
+        # (not Retry — Retry is raised by the autoretry wrapper AFTER finally).
+        # So we check for DTUnavailable directly: if it is the active exception,
+        # the autoretry wrapper will re-run the task and the lock must stay held.
         import sys  # noqa: PLC0415 — local import to avoid circular at module level
 
-        from celery.exceptions import Retry  # noqa: PLC0415
-
         active_exc = sys.exc_info()[1]
-        if not isinstance(active_exc, Retry):
+        if not isinstance(active_exc, DTUnavailable):
             try:
                 rds.delete(_CLEANUP_LOCK_KEY)
             except redis.RedisError as lock_exc:

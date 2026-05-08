@@ -137,7 +137,8 @@ async def cleanup_orphans_endpoint(
             title="Empty UUID List",
             detail=(
                 "dt_project_uuids must contain at least one UUID. "
-                "To delete all detected orphans use POST /v1/admin/dt/orphans/cleanup-all."
+                "Retrieve the full orphan list via GET /v1/admin/dt/orphans, "
+                "then submit the UUIDs explicitly."
             ),
             instance=request.url.path,
         )
