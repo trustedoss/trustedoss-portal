@@ -13,6 +13,16 @@ vi.mock("@/lib/api", () => ({
   postLogout: vi.fn(),
 }));
 
+// ProjectListPage calls listProjects — mock it so the test doesn't hit the
+// network and so the project-list-page testId renders without an API error.
+vi.mock("@/lib/projectsApi", () => ({
+  listProjects: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, size: 100 }),
+  triggerScan: vi.fn(),
+}));
+
+import { postLogout } from "@/lib/api";
+const mockedPostLogout = vi.mocked(postLogout);
+
 const fakeUser: AuthUser = {
   id: "u-1",
   email: "alice@example.com",
@@ -32,7 +42,7 @@ function renderAppAt(path: string) {
   );
 }
 
-describe("App smoke (authenticated home)", () => {
+describe("App smoke (authenticated)", () => {
   beforeEach(() => {
     useAuthStore.setState({
       user: fakeUser,
@@ -46,38 +56,27 @@ describe("App smoke (authenticated home)", () => {
     window.history.replaceState(null, "", "/");
   });
 
-  it("mounts the home page with the bootstrap title (EN by default)", async () => {
+  it("redirects / to /projects and shows the project list", async () => {
     renderAppAt("/");
-
     await waitFor(() => {
-      expect(screen.getByTestId("home-main")).toBeInTheDocument();
+      expect(screen.getByTestId("project-list-page")).toBeInTheDocument();
     });
-    expect(screen.getByTestId("home-title")).toHaveTextContent(
-      /Welcome to TrustedOSS Portal/i,
-    );
   });
 
-  it("renders the 5 risk severity tokens once each", async () => {
-    renderAppAt("/");
+  it("renders the sidebar navigation links", async () => {
+    renderAppAt("/projects");
     await waitFor(() => {
-      expect(screen.getByTestId("risk-legend")).toBeInTheDocument();
+      expect(screen.getByTestId("nav-projects")).toBeInTheDocument();
     });
-
-    const legend = screen.getByTestId("risk-legend");
-    const items = legend.querySelectorAll("[data-risk]");
-    expect(items).toHaveLength(5);
-
-    const severities = Array.from(items).map((node) =>
-      node.getAttribute("data-risk"),
-    );
-    expect(severities).toEqual(["critical", "high", "medium", "low", "info"]);
+    expect(screen.getByTestId("nav-scans")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-approvals")).toBeInTheDocument();
   });
 
   it("toggles the active language between en and ko", async () => {
     const user = userEvent.setup();
-    renderAppAt("/");
+    renderAppAt("/projects");
     await waitFor(() => {
-      expect(screen.getByTestId("home-main")).toBeInTheDocument();
+      expect(screen.getByTestId("app-shell")).toBeInTheDocument();
     });
 
     const toggle = screen.getByTestId("language-toggle");
@@ -85,19 +84,49 @@ describe("App smoke (authenticated home)", () => {
 
     await user.click(toggle);
     expect(toggle).toHaveAttribute("data-current-language", "ko");
-    expect(screen.getByTestId("home-title")).toHaveTextContent(
-      /TrustedOSS Portal에 오신 것을 환영합니다/,
-    );
 
     await user.click(toggle);
     expect(toggle).toHaveAttribute("data-current-language", "en");
   });
 
-  it("renders the logout stub button", async () => {
-    renderAppAt("/");
+  it("renders the logout button in the app header", async () => {
+    renderAppAt("/projects");
     await waitFor(() => {
       expect(screen.getByTestId("logout-button")).toBeInTheDocument();
     });
+  });
+
+  it("super admin sees the admin nav section with all admin links", async () => {
+    useAuthStore.setState({
+      user: { ...fakeUser, isSuperuser: true, role: "super_admin" },
+      accessToken: "tok-admin",
+      status: "authenticated",
+      isAuthenticated: true,
+    });
+    renderAppAt("/projects");
+    await waitFor(() => {
+      expect(screen.getByTestId("nav-admin-users")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("nav-admin-teams")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-admin-dt")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-admin-scans")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-admin-disk")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-admin-audit")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-admin-health")).toBeInTheDocument();
+  });
+
+  it("clicking logout clears auth state and navigates to /login", async () => {
+    const user = userEvent.setup();
+    mockedPostLogout.mockResolvedValue(undefined);
+    renderAppAt("/projects");
+    await waitFor(() => {
+      expect(screen.getByTestId("logout-button")).toBeInTheDocument();
+    });
+    await user.click(screen.getByTestId("logout-button"));
+    await waitFor(() => {
+      expect(screen.getByTestId("login-page")).toBeInTheDocument();
+    });
+    expect(mockedPostLogout).toHaveBeenCalledOnce();
   });
 });
 
