@@ -46,8 +46,8 @@ gh run list --limit 3                              # CI 최근 상태
 | Step 8 | Phase 6 PR #19 — 디스크 가드 + Error Boundary | [x] DONE | #23 (merged e46844b) |
 | Step 9 | Phase 7 PR #20 — 설치 스크립트 + prod compose | [x] DONE | #24 (merged 8141b7e) |
 | Step 10 | Phase 7 PR #21 — Docusaurus + 가이드 | [x] DONE | #25 (merged 7fb19a8) |
-| Step 11 | Phase 8 PR #23 — OAuth + Demo SaaS | [~] IN_PROGRESS | — |
-| Step 12 | Phase 8 PR #24/#25 — 보안·성능·릴리스 | [ ] TODO | — |
+| Step 11 | Phase 8 PR #23 — OAuth (backend) | [x] DONE | #26 (merged 173d6be) |
+| Step 12 | Phase 8 PR #24/#25 — 보안·성능·릴리스 | [~] IN_PROGRESS | — |
 
 ---
 
@@ -663,7 +663,8 @@ docker-compose -f docker-compose.dev.yml exec -T postgres \
 
 ## Step 11: Phase 8 PR #23 — OAuth + Demo SaaS
 
-**상태**: `[~] IN_PROGRESS`  
+**상태**: `[x] DONE` (backend only) — PR #26 머지 (commit 173d6be, 2026-05-09).
+**미흡 (별도 chore)**: Frontend OAuth 버튼, GCP Terraform, scripts/seed_demo.py.  
 **브랜치**: `feature/phase8-pr23-oauth-demo-saas`  
 **예상 PR**: GitHub PR #26  
 **에이전트**: `backend-developer` + `devops-engineer` (병렬)  
@@ -685,7 +686,7 @@ docker-compose -f docker-compose.dev.yml exec -T postgres \
 
 ## Step 12: Phase 8 PR #24/#25 — 보안·성능·릴리스
 
-**상태**: `[ ] TODO`  
+**상태**: `[~] IN_PROGRESS`  
 **브랜치**: `feature/phase8-pr24-security-perf` + `feature/phase8-pr25-release`  
 **예상 PR**: GitHub PR #27 + #28  
 **에이전트**: `security-reviewer` + `devops-engineer` (병렬)  
