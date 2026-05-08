@@ -436,7 +436,10 @@ async def test_reset_password_revokes_all_refresh_tokens(
     )
     assert reset.status_code == 204, reset.text
 
-    db_session.expire_all()
+    # Force a fresh DB read instead of relying on the existing session cache —
+    # AsyncSession.expire_all() needs a greenlet-bound context that this
+    # bare integration test does not always have.
+    await db_session.commit()
     active_after = (
         (
             await db_session.execute(

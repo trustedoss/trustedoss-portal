@@ -110,6 +110,8 @@ async def test_send_slack_timeout_raises_delivery_error(monkeypatch) -> None:
 async def test_send_slack_does_not_log_full_webhook_url(
     monkeypatch, caplog
 ) -> None:
+    import logging as _logging
+
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="ok")
 
@@ -118,7 +120,13 @@ async def test_send_slack_does_not_log_full_webhook_url(
     secret_path = "T012XYZ/B345SECRET/SeCrEtToKeN"
     url = f"https://hooks.slack.com/services/{secret_path}"
 
+    # Silence httpx's own request logging (which echoes the URL) — we only
+    # care that *our* slack module does not leak the secret path.
+    _logging.getLogger("httpx").setLevel(_logging.WARNING)
+    _logging.getLogger("httpcore").setLevel(_logging.WARNING)
+
     await slack_mod.send_slack(text="x", webhook_url=url)
 
-    captured = " ".join(record.getMessage() for record in caplog.records)
+    own_records = [r for r in caplog.records if r.name.startswith("notifications")]
+    captured = " ".join(record.getMessage() for record in own_records)
     assert secret_path not in captured

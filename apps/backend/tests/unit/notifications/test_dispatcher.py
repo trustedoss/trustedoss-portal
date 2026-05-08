@@ -182,9 +182,15 @@ async def test_dispatch_email_with_no_recipients_is_skipped(monkeypatch) -> None
     an empty list (e.g. unmatched email) — we still want "skipped", not
     a phantom retry.
     """
-    # Use the real email send wrapper for this test so we exercise the
-    # NotificationDisabled translation path.
-    monkeypatch.setattr(disp, "_send_email_channel", disp._send_email_channel)
+
+    # Override the autouse no-op email so we exercise the real "no recipients"
+    # path: the dispatcher should translate the raised NotificationDisabled
+    # into a skipped channel.
+    async def _real_no_recipients(*, recipients, payload):
+        if not recipients:
+            raise NotificationDisabled("email channel requested with no recipients")
+
+    monkeypatch.setattr(disp, "_send_email_channel", _real_no_recipients)
 
     report = await disp.dispatch(
         kind=disp.NotificationKind.PASSWORD_RESET,

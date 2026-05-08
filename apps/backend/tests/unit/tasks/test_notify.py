@@ -51,7 +51,8 @@ def test_send_notification_task_returns_report_when_no_retryable_failures(
 
     monkeypatch.setattr(notify_mod, "dispatch", _fake_dispatch)
 
-    fn = notify_mod.send_notification_task.run
+    # Get the underlying function (bypassing Celery's bind=True self-injection)
+    fn = notify_mod.send_notification_task.__wrapped__
     out = fn(
         _FakeTask(),
         "password_reset",
@@ -86,7 +87,7 @@ def test_send_notification_task_raises_for_retryable_failures(monkeypatch) -> No
 
     monkeypatch.setattr(notify_mod, "dispatch", _fake_dispatch)
 
-    fn = notify_mod.send_notification_task.run
+    fn = notify_mod.send_notification_task.__wrapped__
     with pytest.raises(NotificationDeliveryError):
         fn(
             _FakeTask(),
