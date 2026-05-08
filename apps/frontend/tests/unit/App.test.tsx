@@ -20,6 +20,9 @@ vi.mock("@/lib/projectsApi", () => ({
   triggerScan: vi.fn(),
 }));
 
+import { postLogout } from "@/lib/api";
+const mockedPostLogout = vi.mocked(postLogout);
+
 const fakeUser: AuthUser = {
   id: "u-1",
   email: "alice@example.com",
@@ -91,6 +94,39 @@ describe("App smoke (authenticated)", () => {
     await waitFor(() => {
       expect(screen.getByTestId("logout-button")).toBeInTheDocument();
     });
+  });
+
+  it("super admin sees the admin nav section with all admin links", async () => {
+    useAuthStore.setState({
+      user: { ...fakeUser, isSuperuser: true, role: "super_admin" },
+      accessToken: "tok-admin",
+      status: "authenticated",
+      isAuthenticated: true,
+    });
+    renderAppAt("/projects");
+    await waitFor(() => {
+      expect(screen.getByTestId("nav-admin-users")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("nav-admin-teams")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-admin-dt")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-admin-scans")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-admin-disk")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-admin-audit")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-admin-health")).toBeInTheDocument();
+  });
+
+  it("clicking logout clears auth state and navigates to /login", async () => {
+    const user = userEvent.setup();
+    mockedPostLogout.mockResolvedValue(undefined);
+    renderAppAt("/projects");
+    await waitFor(() => {
+      expect(screen.getByTestId("logout-button")).toBeInTheDocument();
+    });
+    await user.click(screen.getByTestId("logout-button"));
+    await waitFor(() => {
+      expect(screen.getByTestId("login-page")).toBeInTheDocument();
+    });
+    expect(mockedPostLogout).toHaveBeenCalledOnce();
   });
 });
 
