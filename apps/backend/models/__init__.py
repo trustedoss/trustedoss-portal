@@ -29,6 +29,10 @@ from .auth import (  # noqa: E402,F401  (imported for metadata side effects)
     Team,
     User,
 )
+from .component_approval import (  # noqa: E402,F401  (imported for metadata side effects)
+    ApprovalStatus,
+    ComponentApproval,
+)
 from .license_fetch_cache import (  # noqa: E402,F401  (imported for metadata side effects)
     LicenseFetchCache,
 )
@@ -47,9 +51,11 @@ from .scan import (  # noqa: E402,F401  (imported for metadata side effects)
 )
 
 __all__ = [
+    "ApprovalStatus",
     "AuditLog",
     "Base",
     "Component",
+    "ComponentApproval",
     "ComponentVersion",
     "License",
     "LicenseFetchCache",
