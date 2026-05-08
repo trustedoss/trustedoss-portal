@@ -42,37 +42,14 @@ from tasks.celery_app import celery_app
 log = structlog.get_logger("tasks.notify")
 
 
-@celery_app.task(  # type: ignore[misc]
-    name="trustedoss.send_notification",
-    bind=True,
-    autoretry_for=(NotificationDeliveryError,),
-    retry_backoff=True,
-    retry_backoff_max=600,  # cap exponential backoff at 10 minutes
-    retry_jitter=True,
-    max_retries=5,
-)
-def send_notification_task(
+def _run_notification(
     self: Any,
     kind: str,
     context: dict[str, Any],
     channels: list[str],
     recipients: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Dispatch a notification asynchronously with retry-on-transient-failure.
-
-    Args:
-        kind: Value of a :class:`notifications.dispatcher.NotificationKind`.
-        context: Per-kind variables consumed by the message builder.
-        channels: Subset of ``["email", "slack", "teams"]``.
-        recipients: Email recipients (optional — only consulted by the
-            email channel).
-
-    Returns:
-        The dispatcher report (see ``notifications.dispatcher`` docstring).
-        When ``retryable_failures`` is ``True`` and we still have retry
-        budget the task raises :class:`NotificationDeliveryError` so the
-        autoretry envelope schedules the next attempt.
-    """
+    """Underlying function (testable without Celery's bind=True self-injection)."""
     structlog.contextvars.bind_contextvars(
         task_name="send_notification",
         task_id=str(self.request.id) if self and self.request else None,
@@ -91,10 +68,7 @@ def send_notification_task(
         )
         if report.get("retryable_failures"):
             # Surface a single retryable error so the autoretry envelope
-            # picks this up. The next attempt will re-dispatch all channels;
-            # already-delivered channels will simply re-deliver, which is
-            # acceptable for the kinds we support today (each is idempotent
-            # at the operator end — they get a duplicate email / Slack).
+            # picks this up.
             raise NotificationDeliveryError(
                 "one or more channels suffered a transient failure"
             )
@@ -105,4 +79,29 @@ def send_notification_task(
         )
 
 
-__all__ = ["send_notification_task"]
+@celery_app.task(  # type: ignore[misc]
+    name="trustedoss.send_notification",
+    bind=True,
+    autoretry_for=(NotificationDeliveryError,),
+    retry_backoff=True,
+    retry_backoff_max=600,  # cap exponential backoff at 10 minutes
+    retry_jitter=True,
+    max_retries=5,
+)
+def send_notification_task(
+    self: Any,
+    kind: str,
+    context: dict[str, Any],
+    channels: list[str],
+    recipients: list[str] | None = None,
+) -> dict[str, Any]:
+    """Dispatch a notification asynchronously with retry-on-transient-failure.
+
+    Thin Celery wrapper around :func:`_run_notification` — kept separate so
+    unit tests can call ``_run_notification`` directly without going through
+    Celery's bind=True self-injection.
+    """
+    return _run_notification(self, kind, context, channels, recipients)
+
+
+__all__ = ["_run_notification", "send_notification_task"]
