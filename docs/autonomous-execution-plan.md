@@ -45,8 +45,8 @@ gh run list --limit 3                              # CI 최근 상태
 | Step 7 | Phase 6 PR #18 — 알림 시스템 + 비밀번호 찾기 (backend) | [x] DONE | #22 (merged 3dbc103) |
 | Step 8 | Phase 6 PR #19 — 디스크 가드 + Error Boundary | [x] DONE | #23 (merged e46844b) |
 | Step 9 | Phase 7 PR #20 — 설치 스크립트 + prod compose | [x] DONE | #24 (merged 8141b7e) |
-| Step 10 | Phase 7 PR #21 — Docusaurus + 가이드 | [~] IN_PROGRESS | — |
-| Step 11 | Phase 8 PR #23 — OAuth + Demo SaaS | [ ] TODO | — |
+| Step 10 | Phase 7 PR #21 — Docusaurus + 가이드 | [x] DONE | #25 (merged 7fb19a8) |
+| Step 11 | Phase 8 PR #23 — OAuth + Demo SaaS | [~] IN_PROGRESS | — |
 | Step 12 | Phase 8 PR #24/#25 — 보안·성능·릴리스 | [ ] TODO | — |
 
 ---
@@ -637,7 +637,7 @@ docker-compose -f docker-compose.dev.yml exec -T postgres \
 
 ## Step 10: Phase 7 PR #21 — Docusaurus + 가이드
 
-**상태**: `[~] IN_PROGRESS`  
+**상태**: `[x] DONE` — PR #25 머지 (commit 7fb19a8, 2026-05-09).  
 **브랜치**: `feature/phase7-pr21-docs`  
 **예상 PR**: GitHub PR #25  
 **에이전트**: `doc-writer` (주)  
@@ -663,7 +663,7 @@ docker-compose -f docker-compose.dev.yml exec -T postgres \
 
 ## Step 11: Phase 8 PR #23 — OAuth + Demo SaaS
 
-**상태**: `[ ] TODO`  
+**상태**: `[~] IN_PROGRESS`  
 **브랜치**: `feature/phase8-pr23-oauth-demo-saas`  
 **예상 PR**: GitHub PR #26  
 **에이전트**: `backend-developer` + `devops-engineer` (병렬)  
