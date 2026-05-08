@@ -47,7 +47,7 @@ gh run list --limit 3                              # CI 최근 상태
 | Step 9 | Phase 7 PR #20 — 설치 스크립트 + prod compose | [x] DONE | #24 (merged 8141b7e) |
 | Step 10 | Phase 7 PR #21 — Docusaurus + 가이드 | [x] DONE | #25 (merged 7fb19a8) |
 | Step 11 | Phase 8 PR #23 — OAuth (backend) | [x] DONE | #26 (merged 173d6be) |
-| Step 12 | Phase 8 PR #24/#25 — 보안·성능·릴리스 | [~] IN_PROGRESS | — |
+| Step 12 | Phase 8 PR #24 — SAST + CHANGELOG + release helper | [x] DONE | #27 (merged 81addbb) |
 
 ---
 
@@ -686,7 +686,13 @@ docker-compose -f docker-compose.dev.yml exec -T postgres \
 
 ## Step 12: Phase 8 PR #24/#25 — 보안·성능·릴리스
 
-**상태**: `[~] IN_PROGRESS`  
+**상태**: `[x] DONE` (PR #24만) — PR #27 머지 (commit 81addbb, 2026-05-09).
+**미흡 (별도 chore)**:
+- bandit/semgrep advisory → HARD FAIL 전환
+- Trivy CI HARD FAIL 활성화 (현재 soft-fail)
+- 부하 테스트 (Locust)
+- SCA on self (자기 자신 스캔)
+- v2.0.0 정식 릴리스 태그 (현재 v2.0.0-rc.1까지 준비)  
 **브랜치**: `feature/phase8-pr24-security-perf` + `feature/phase8-pr25-release`  
 **예상 PR**: GitHub PR #27 + #28  
 **에이전트**: `security-reviewer` + `devops-engineer` (병렬)  
