@@ -63,9 +63,10 @@ def test_alembic_current_reports_head_revision():
     # cache); chore PR #7 bumped 0004 → 0005 (data wipe of
     # phishing-prone reference URLs); Phase 4 PR #13 bumped 0005 → 0006
     # (password_reset_tokens); Phase 4 PR #14 bumped 0006 → 0007
-    # (audit_logs target_table / action / composite indexes). Bump again
-    # when a future migration lands.
-    assert "0007" in current.stdout, current.stdout
+    # (audit_logs target_table / action / composite indexes); Phase 4
+    # PR #15 bumped 0007 → 0008 (component_approvals). Bump again when
+    # a future migration lands.
+    assert "0008" in current.stdout, current.stdout
 
 
 @pytest.mark.integration
