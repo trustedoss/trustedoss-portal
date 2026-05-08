@@ -36,9 +36,9 @@ gh run list --limit 3                              # CI 최근 상태
 
 | 단계 | 작업 | 상태 | PR |
 |------|------|------|----|
-| Step 1 | 공통 앱 레이아웃 + New Project 폼 | [~] IN_PROGRESS | #16 (CI 확인 중) |
-| Step 2 | chore PR #9 — Admin 보안 follow-up | [~] IN_PROGRESS | #17 (security-reviewer 대기) |
-| Step 3 | Phase 4 PR #15 — 컴포넌트 승인 워크플로우 | [ ] TODO | — |
+| Step 1 | 공통 앱 레이아웃 + New Project 폼 | [x] DONE | #16 (merged c5ed441) |
+| Step 2 | chore PR #9 — Admin 보안 follow-up | [x] DONE | #17 (merged 9554d40) |
+| Step 3 | Phase 4 PR #15 — 컴포넌트 승인 워크플로우 | [~] IN_PROGRESS | — |
 | Step 4 | Phase 3 미완 — SBOM·Settings·/scans | [ ] TODO | — |
 | Step 5 | Phase 5 PR #16 — API Key + Webhook | [ ] TODO | — |
 | Step 6 | Phase 5 PR #17 — 빌드 게이트 + PR 코멘트 + GitHub Actions | [ ] TODO | — |
@@ -104,11 +104,7 @@ EOF
 
 ## Step 1: 공통 앱 레이아웃 + New Project 폼
 
-**상태**: `[~] IN_PROGRESS` — PR #16 오픈. 3차 push 완료 (commit e8dcde9):
-  1. feat: AppShell + ProjectCreatePage (20a6388)
-  2. fix(e2e): auth harness home-main→app-sidebar, waitForURL→/projects (3594016)
-  3. test: coverage gate — AppShell logout/admin-nav + ProjectCreatePage (e8dcde9)
-  CI 결과 확인 후 머지.  
+**상태**: `[x] DONE` — PR #16 머지 (commit c5ed441, 2026-05-08).  
 **브랜치**: `feature/step1-app-layout-new-project`  
 **예상 PR**: GitHub PR #16  
 **에이전트**: `frontend-dev` (주), `test-writer` (보조)  
@@ -242,10 +238,7 @@ ls apps/frontend/src/features/projects/ProjectCreatePage.tsx 2>/dev/null && echo
 
 ## Step 2: chore PR #9 — Admin 보안 follow-up
 
-**상태**: `[~] IN_PROGRESS` — PR #17 오픈. 2차 push 완료 (commit 50a2b75):
-  1. chore: M1~G10 구현 (c3f077e)
-  2. fix: security-reviewer G2/G4/G6/L1 수정 (50a2b75)
-  security-reviewer CHANGES_REQUESTED → fixes 적용 완료. CI 결과 확인 후 머지.  
+**상태**: `[x] DONE` — PR #17 머지 (commit 9554d40, 2026-05-08).  
 **브랜치**: `feature/chore-pr9-admin-followups`  
 **예상 PR**: GitHub PR #17  
 **에이전트**: `backend-developer` (주)  
@@ -282,7 +275,7 @@ git branch -r | grep chore-pr9
 - [ ] G5: `q="%admin%"` 쿼리 → 정상 응답 (crash 없음)
 - [ ] G6: `dt_project_uuids=[]` 요청 → 400 에러 반환
 - [ ] pytest green (기존 admin 테스트 포함)
-<!-- - [ ] security-reviewer 에이전트 PASS (PASS-with-conditions 이상) -->
+- [ ] security-reviewer 에이전트 PASS (PASS-with-conditions 이상)
 
 ### 구현 프로토콜
 
@@ -293,9 +286,9 @@ git branch -r | grep chore-pr9
 2. pytest 실행:
    cd apps/backend && python -m pytest tests/ -x -q 2>&1 | tail -30
 
-<!-- 3. security-reviewer 에이전트: 변경 파일 diff 리뷰
+3. security-reviewer 에이전트: 변경 파일 diff 리뷰
    - PASS 또는 PASS-with-conditions → PR 생성
-   - FAIL → 지적 사항 수정 후 재검토 -->
+   - FAIL → 지적 사항 수정 후 재검토
 
 4. PR 생성 (Step 3보다 먼저 머지)
 5. 이 파일 Step 2 상태 [x] 업데이트
@@ -305,7 +298,7 @@ git branch -r | grep chore-pr9
 
 ## Step 3: Phase 4 PR #15 — 컴포넌트 승인 워크플로우
 
-**상태**: `[ ] TODO`  
+**상태**: `[~] IN_PROGRESS`  
 **브랜치**: `feature/phase4-pr15-component-approval-workflow`  
 **예상 PR**: GitHub PR #18  
 **에이전트**: `backend-developer` + `frontend-dev` + `test-writer` (병렬)  
@@ -357,7 +350,7 @@ grep -r "approvals" apps/backend/api/v1/admin/__init__.py 2>/dev/null
 - [ ] 상태 변경 시 Audit Log 기록
 - [ ] require_super_admin_or_404 적용 (Developer는 404)
 - [ ] pytest green (unit + integration)
-<!-- - [ ] security-reviewer PASS -->
+- [ ] security-reviewer PASS
 
 ### 구현 프로토콜
 
@@ -375,7 +368,7 @@ grep -r "approvals" apps/backend/api/v1/admin/__init__.py 2>/dev/null
 4. 두 에이전트 완료 후 통합:
    cd apps/backend && python -m pytest tests/ -x -q 2>&1 | tail -30
 
-<!-- 5. security-reviewer 에이전트 (상태 전이 로직 + RBAC 집중 검토) -->
+5. security-reviewer 에이전트 (상태 전이 로직 + RBAC 집중 검토)
 
 6. PR 생성 + CI + 머지
 7. 이 파일 Step 3 [x] 업데이트
@@ -514,7 +507,7 @@ docker-compose -f docker-compose.dev.yml exec -T postgres \
 - [ ] 잘못된 서명 Webhook → 401
 - [ ] 동일 `delivery_id` 재전송 → 200 (중복 처리 없음)
 - [ ] `/integrations` 페이지: 키 생성/폐기 동작
-<!-- - [ ] security-reviewer PASS (API Key 해싱, Webhook 서명 검증 집중) -->
+- [ ] security-reviewer PASS (API Key 해싱, Webhook 서명 검증 집중)
 - [ ] pytest unit + integration green
 
 ---
