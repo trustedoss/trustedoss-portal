@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import create_access_token
 from models import User
@@ -90,7 +91,7 @@ async def _factory(client: AsyncClient):
 
 
 async def _create_inapp(
-    session: object,
+    session: AsyncSession,
     *,
     user_id: uuid.UUID,
     kind: str = "scan_completed",
@@ -103,7 +104,7 @@ async def _create_inapp(
     """Insert a notification row directly via the service (test-time helper)."""
     from services.notification_service import create_notification
 
-    row = await create_notification(  # type: ignore[arg-type]
+    row = await create_notification(
         session,
         user_id=user_id,
         kind=kind,
