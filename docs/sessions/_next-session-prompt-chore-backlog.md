@@ -1,6 +1,6 @@
-# 다음 세션 시작 prompt — Chore Backlog 처리
+# 다음 세션 시작 prompt — Chore Backlog 처리 (세션 2 시작점)
 
-> Step 1~12 (PR #16~#27) 모두 머지 완료 (2026-05-08 ~ 05-09).
+> Step 1~12 (PR #16~#27) 머지 완료 + Chore frontend bundle (PR #28) 머지 완료 (2026-05-09).
 > 이 prompt를 새 세션 첫 메시지에 그대로 붙여넣어 시작한다.
 
 ---
@@ -9,16 +9,18 @@ TrustedOSS Portal v2 작업을 `~/projects/trustedoss-portal/` 에서 이어서 
 
 ## 0. 현재 상태 (2026-05-09 기준)
 
-- main HEAD = `c75f11c` (plan: Step 12 DONE)
-- 누적 머지: PR #1 ~ #27 (Step 1~12 + 사전 Phase 0~4 PRs)
-- 12 단계 자율 실행 모두 완료. 남은 작업은 미흡 항목 정리뿐.
+- main HEAD = `df5bb5e` (PR #28 — chore frontend bundle: A1 + B + C)
+- 누적 머지: PR #1 ~ #28 (Step 1~12 + chore PRs)
+- chore-backlog 처리율: 11 항목 중 **3 done (A1, B, C)** + 1 신규 (A2 deferred). 잔여 9 항목.
 
 ```bash
 git log --oneline -3
+# df5bb5e chore: frontend bundle (Chore A1 + B + C) — password reset wiring, OAuth buttons, /integrations page (#28)
+# 2ff9c1e docs: chore backlog + next-session prompt for post-Step-12 cleanup
 # c75f11c plan: Step 12 DONE (PR #27) — 모든 12 steps 완료
-# 81addbb Phase 8 PR #24 — SAST CI (bandit + semgrep) + CHANGELOG + release helper (#27)
-# 2a3ec5a plan: Step 11 DONE (PR #26) → Step 12 IN_PROGRESS
 ```
+
+세션 1 핸드오프: `docs/sessions/2026-05-09-chore-frontend-bundle.md`
 
 ## 1. 단일 진실
 
@@ -48,16 +50,10 @@ main의 working tree 잔여 (무시):
 
 ## 3. 처리 순서 (chore-backlog.md 권장 순서)
 
-### 세션 1 — 사용자 가시성 (우선순위 1)
-**브랜치**: `chore/frontend-bundle`
-**묶음**: Chore A + B + C
-- A: 알림 센터 + 비밀번호 찾기 + i18n 게이트
-- B: Frontend OAuth 버튼
-- C: /integrations 페이지 (API Key 관리 UI)
+### ~~세션 1 — 사용자 가시성 (우선순위 1)~~ ✅ PR #28 머지 (2026-05-09)
+~~A + B + C 통합~~ → A1 + B + C 처리됨. A2 (인앱 알림 센터) 는 백엔드 신규 작업 필요라 세션 6 으로 분리.
 
-이 세 가지는 모두 frontend-only 또는 백엔드는 이미 존재. 한 PR에 묶어도 OK 또는 분리.
-
-### 세션 2 — 운영 안정성 (우선순위 2)
+### 세션 2 — 운영 안정성 (우선순위 2) ← **이번 세션 시작점**
 **브랜치**: `chore/phase6-pr19-backup-ws`
 - D: 자동 백업 + 수동 백업/복원 UI + WebSocket 재연결
 
@@ -79,18 +75,22 @@ main의 working tree 잔여 (무시):
 
 ## 4. 이 세션의 권장 시작점
 
-**가장 먼저** 묶음 1 (Chore A + B + C — frontend-bundle)을 작업한다. 이유:
-- 백엔드 API는 이미 PR #20, #22, #26에서 완성됨
-- 프론트엔드 작업만 필요 (frontend-dev 에이전트 1개)
-- 사용자 가시성 (UI 미완 → GA blocker)
+**가장 먼저** Chore D (자동 백업 + 수동 백업/복원 UI + WebSocket 재연결) 를 작업한다. 이유:
+- 백엔드는 `scripts/backup.sh` 가 이미 존재. Celery Beat task + Admin UI + WS reconnect 만 추가.
+- backend-developer + scan-pipeline-specialist + frontend-dev 3개 에이전트 협업.
+- GA 운영성 (백업 미존재는 prod 배포 blocker).
 
 새 브랜치 생성:
 ```bash
-git checkout -b chore/phase6-7-8-frontend-bundle
-git push -u origin chore/phase6-7-8-frontend-bundle
+git checkout main && git pull --ff-only
+git checkout -b chore/phase6-pr19-backup-ws
+git push -u origin chore/phase6-pr19-backup-ws
 ```
 
-그리고 frontend-dev 에이전트 위임 (chore-backlog.md의 Chore A/B/C 통합 prompt 작성).
+그리고 `docs/chore-backlog.md` Chore D 의 미흡 목록 그대로 적용:
+- `tasks/backup.py` (Celery Beat 매일 자정, pg_dump + workspace tar, 7일 retention)
+- `/admin/backup` 페이지 (다운로드 + 업로드 복원 + audit emit)
+- `useScanWebSocket` hook 에 `visibilitychange` listener (탭 복귀 시 reconnect)
 
 ## 5. 자율 실행 프로토콜 (chore-backlog 단위 적용)
 

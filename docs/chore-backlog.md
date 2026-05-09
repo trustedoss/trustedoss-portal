@@ -8,15 +8,15 @@
 
 ## 우선순위 1 — 사용자 가시성 / GA blocker
 
-### Chore A1 — 비밀번호 찾기 + i18n 게이트 (frontend-only)
+### ~~Chore A1 — 비밀번호 찾기 + i18n 게이트 (frontend-only)~~ ✅ PR #28 (2026-05-09)
 **기반 PR**: #22 (Step 7 backend — `/auth/forgot-password`, `/auth/reset-password` 존재)
-**브랜치 제안**: `chore/frontend-bundle`
-**예상 소요**: 0.5 세션
+**브랜치**: `chore/frontend-bundle` (머지 후 삭제)
+**머지 commit**: `df5bb5e`
 
-미흡:
-- `/forgot-password` 프론트 화면 → backend `/auth/forgot-password` 연동 (현재 stub)
-- `/reset-password` 프론트 화면 신규 (`?token=` 쿼리 파라미터 → `/auth/reset-password` POST)
-- `i18next-parser` CI 게이트: EN/KO drift 0 강제
+처리 결과:
+- ✅ `/forgot-password` → `POST /auth/forgot-password` 연동 (anti-enumeration 균일 success view)
+- ✅ `/reset-password` 신규 (`?token=` → `POST /auth/reset-password`, missing-token UI 포함)
+- ✅ `i18next-parser` 9.4.0 + `i18n:check` CI 게이트 (EN/KO drift 0 강제)
 
 ### Chore A2 — 인앱 알림 센터 + 채널 ON/OFF (backend + frontend)
 **기반 PR**: 없음 (PR #22 는 outbound dispatcher 만 배포, in-app notification center 백엔드 미존재)
@@ -28,27 +28,29 @@
 - 프론트: `/notifications` 페이지 + 헤더 벨 아이콘 (읽음/안읽음 카운트)
 - 프론트: 사용자 설정 페이지 — 채널별 ON/OFF (email/slack/teams)
 
-### Chore B — Frontend OAuth 버튼
+### ~~Chore B — Frontend OAuth 버튼~~ ✅ PR #28 (2026-05-09)
 **기반 PR**: #26 (Step 11 backend)
-**브랜치 제안**: `chore/phase8-pr23-frontend-oauth`
-**예상 소요**: 0.5 세션
+**브랜치**: `chore/frontend-bundle` (A1, C와 함께 묶음)
+**머지 commit**: `df5bb5e`
 
-미흡:
-- `/login` 페이지에 "Sign in with GitHub" / "Sign in with Google" 버튼
-- `redirect_after` 쿼리 파라미터 처리 (로그인 후 돌아갈 곳)
-- `?error=oauth_*` 코드별 사용자 메시지 (i18n)
-- e2e 테스트: OAuth 버튼 클릭 → 302 → mock callback → AppShell 마운트
+처리 결과:
+- ✅ `/login` 페이지에 GitHub / Google 버튼
+- ✅ `redirect_after` 쿼리 파라미터 → 백엔드 authorize endpoint로 propagation
+- ✅ 7개 OAuth 에러 코드 i18n 매핑 (denied / invalid_state / failed / user_inactive / no_organization / missing_params / unknown)
+- ✅ E2E 시나리오: 버튼 visibility + `?error=oauth_denied` 배너 (실제 클릭은 외부 provider redirect라 visibility-only)
+- 백엔드 경로 보정: `/auth/oauth/<provider>/...` (no `/v1` prefix — 라우터 자체 prefix 선언)
 
-### Chore C — /integrations 페이지
+### ~~Chore C — /integrations 페이지~~ ✅ PR #28 (2026-05-09)
 **기반 PR**: #20 (Step 5)
-**브랜치 제안**: `chore/phase5-pr16-integrations-ui`
-**예상 소요**: 0.5 세션
+**브랜치**: `chore/frontend-bundle` (A1, B와 함께 묶음)
+**머지 commit**: `df5bb5e`
 
-미흡:
-- `/integrations` 페이지: API Key 생성/조회/폐기 UI
-- 평문 키 1회 표시 + 복사 버튼 (이후 prefix만)
-- Webhook 수신 URL 안내 (project별 webhook_secret 설정 안내)
-- super_admin 외에는 자신 팀/프로젝트 키만 보임
+처리 결과:
+- ✅ `/integrations` 페이지: API Key 생성/조회/폐기 UI + AppShell nav (KeyRound 아이콘)
+- ✅ 평문 키 1회 노출 dialog + 복사 버튼 + 경고 문구
+- ✅ Webhook 수신 URL 안내 섹션 (GitHub HMAC, GitLab token)
+- 백엔드 RBAC 의존: 백엔드가 scope 별 권한 강제 (super_admin → org, team_admin → team, developer → project)
+- 미반영: `expires_in_days` 필드 (백엔드 `APIKeyCreateIn` 미정의 — 향후 추가 시 1줄 변경)
 
 ---
 
@@ -174,11 +176,12 @@
 
 | 세션 | 묶음 | PRs |
 |-----|------|-----|
-| 1 | 우선순위 1 | A + B + C 한 PR로 (`chore/frontend-bundle`) |
+| ~~1~~ | ~~우선순위 1~~ | ~~A1 + B + C~~ → **PR #28 머지 (2026-05-09)** |
 | 2 | 우선순위 2 | D 단독 |
 | 3 | 우선순위 4 | H + I + J 한 PR로 (`chore/security-bundle`) |
 | 4 | 우선순위 5 + 4 K | L + K 마지막 (정식 릴리스) |
 | 5 | 우선순위 3 | F + G (Demo SaaS) — GA 후 진행 |
+| 6 | 우선순위 1 (잔여) | **A2** (인앱 알림 센터 + prefs) — backend + frontend |
 
 ---
 
