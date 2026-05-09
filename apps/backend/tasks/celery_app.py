@@ -22,6 +22,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from celery import Celery
+from celery.schedules import crontab
 from celery.schedules import schedule as _schedule
 
 from core.config import redis_url
@@ -38,6 +39,8 @@ _TASK_INCLUDES = [
     "tasks.dt_health",
     # Phase 6 PR #18 — multi-channel notification fan-out (email/Slack/Teams).
     "tasks.notify",
+    # Phase 6 chore PR #19 — automated backup + restore tasks.
+    "tasks.backup",
 ]
 
 
@@ -67,6 +70,14 @@ def _build_beat_schedule() -> dict[str, dict[str, object]]:
         "dt-orphan-cleaner-six-hourly": {
             "task": "trustedoss.dt_orphan_cleaner",
             "schedule": _schedule(timedelta(hours=6)),
+        },
+        # Phase 6 chore PR #19 — daily auto-backup at 00:00 UTC. The task
+        # itself applies a 7-day retention pass to ``auto-*`` backups after
+        # writing the new artifact; manual backups are never auto-pruned.
+        "daily-auto-backup": {
+            "task": "trustedoss.backup.run",
+            "schedule": crontab(hour=0, minute=0),
+            "kwargs": {"kind": "auto", "actor_user_id": None},
         },
     }
 

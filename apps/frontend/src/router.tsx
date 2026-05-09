@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import { RequireAuth } from "@/components/RequireAuth";
 import { AdminAuditPage } from "@/features/admin/audit/AdminAuditPage";
+import { AdminBackupPage } from "@/features/admin/backup/AdminBackupPage";
 import { AdminDiskPage } from "@/features/admin/disk/AdminDiskPage";
 import { AdminDTPage } from "@/features/admin/dt/AdminDTPage";
 import { AdminHealthPage } from "@/features/admin/health/AdminHealthPage";
@@ -77,6 +78,7 @@ export function AppRoutes() {
         <Route path="disk" element={<AdminDiskPage />} />
         <Route path="audit" element={<AdminAuditPage />} />
         <Route path="health" element={<AdminHealthPage />} />
+        <Route path="backup" element={<AdminBackupPage />} />
         <Route path="*" element={<AdminNotFound />} />
       </Route>
 

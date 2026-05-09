@@ -40,13 +40,19 @@ command -v docker-compose >/dev/null 2>&1 || fail "docker-compose (V1) is requir
 set -a; . ./.env; set +a
 WORKSPACE_HOST_PATH=${WORKSPACE_HOST_PATH:-/opt/trustedoss/workspace}
 
-# Confirm with the operator before destructive ops.
+# Confirm with the operator before destructive ops. Programmatic callers
+# (e.g. the admin restore Celery task) set BACKUP_RESTORE_CONFIRM=yes to
+# skip the interactive prompt — direct CLI use still pauses for [y/N].
 title "About to restore from $BACKUP_DIR"
 warn "This will:"
 warn "  - REPLACE the current database content"
 warn "  - REPLACE $WORKSPACE_HOST_PATH (if workspace.tar.gz present)"
-read -r -p "Continue? [y/N] " reply
-[[ "$reply" =~ ^[Yy]$ ]] || fail "aborted"
+if [[ "${BACKUP_RESTORE_CONFIRM:-}" == "yes" ]]; then
+  ok "BACKUP_RESTORE_CONFIRM=yes — skipping interactive prompt"
+else
+  read -r -p "Continue? [y/N] " reply
+  [[ "$reply" =~ ^[Yy]$ ]] || fail "aborted"
+fi
 
 # ---------------------------------------------------------------------------
 # 1. Stop application services (DB + Redis remain up)

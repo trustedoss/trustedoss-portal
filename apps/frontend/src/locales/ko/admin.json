@@ -8,7 +8,8 @@
       "scans": "스캔 큐",
       "disk": "디스크",
       "audit": "감사 로그",
-      "health": "시스템 상태"
+      "health": "시스템 상태",
+      "backup": "백업"
     }
   },
   "admin": {
@@ -323,6 +324,48 @@
       },
       "no_detail": "—",
       "updated_at": "갱신 시각: {{when}}"
+    },
+    "backup": {
+      "title": "백업",
+      "subtitle": "자동 일일 백업 + 수동 백업 트리거 + 복원.",
+      "column": {
+        "name": "이름",
+        "kind": "종류",
+        "created_at": "생성",
+        "size": "크기",
+        "db_revision": "DB 리비전",
+        "actions": "작업"
+      },
+      "kind": {
+        "auto": "자동",
+        "manual": "수동"
+      },
+      "actions": {
+        "manual_trigger": "지금 수동 백업 실행",
+        "choose_file": "파일 업로드 및 복원…",
+        "refresh": "새로 고침",
+        "download": "다운로드",
+        "delete": "삭제",
+        "restore": "복원"
+      },
+      "tooltip": {
+        "auto_pruned": "자동 백업은 7일 후 자동 정리됩니다."
+      },
+      "confirm": {
+        "delete": "백업 \"{{name}}\" 을(를) 삭제하시겠습니까? 되돌릴 수 없습니다."
+      },
+      "restore": {
+        "warning": "복원 시 사용자, 프로젝트, 스캔을 포함한 모든 데이터가 덮어써집니다. 되돌릴 수 없습니다.",
+        "type_to_confirm": "확인하려면 '{{token}}' 을(를) 입력하세요",
+        "queued_banner": "복원이 큐에 등록되었습니다. 백엔드가 일시 중지됩니다; 30초 후 새로고침하세요."
+      },
+      "toast": {
+        "manual_triggered": "수동 백업이 큐에 등록되었습니다.",
+        "deleted": "백업이 삭제되었습니다.",
+        "download_started": "다운로드가 시작되었습니다.",
+        "restore_queued": "복원이 큐에 등록되었습니다."
+      },
+      "empty": "아직 백업이 없습니다. 수동 백업을 실행하거나 야간 작업을 기다리세요."
     },
     "errors": {
       "last_super_admin_protected": "마지막 슈퍼 관리자의 권한을 강등하거나 비활성화할 수 없습니다.",

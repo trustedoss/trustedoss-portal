@@ -21,6 +21,7 @@ import {
   Activity,
   Building2,
   ClipboardList,
+  Database,
   HardDrive,
   ListChecks,
   LogOut,
@@ -86,6 +87,12 @@ const NAV_ITEMS: NavItem[] = [
     labelKey: "nav.admin.health",
     icon: Activity,
     testId: "admin-nav-health",
+  },
+  {
+    to: "/admin/backup",
+    labelKey: "nav.admin.backup",
+    icon: Database,
+    testId: "admin-nav-backup",
   },
 ];
 

@@ -40,7 +40,9 @@ set -a; . ./.env; set +a
 WORKSPACE_HOST_PATH=${WORKSPACE_HOST_PATH:-/opt/trustedoss/workspace}
 
 stamp=$(date +%Y-%m-%d-%H%M%S)
-out_dir="backups/$stamp"
+# Allow Celery / programmatic callers to pin the destination via BACKUP_DIR.
+# When unset we fall back to the legacy behaviour (`backups/<stamp>`).
+out_dir="${BACKUP_DIR:-backups/$stamp}"
 mkdir -p "$out_dir"
 
 title "Backup → $out_dir"

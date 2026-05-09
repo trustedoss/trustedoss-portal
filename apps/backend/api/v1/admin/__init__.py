@@ -13,6 +13,7 @@ Sub-routers:
   - ``disk``   — ``/v1/admin/disk``      (PR #14: workspace + DT + DB telemetry)
   - ``audit``  — ``/v1/admin/audit/*``   (PR #14: search + CSV export)
   - ``health`` — ``/v1/admin/health``    (PR #14: aggregated component status)
+  - ``backup`` — ``/v1/admin/backup/*``  (chore PR #19: list/trigger/download/restore/delete)
 
 Future PRs (#15+) will add the component-approval workflow sub-router.
 """
@@ -23,7 +24,7 @@ from fastapi import APIRouter, Depends
 
 from core.security import require_super_admin_or_404
 
-from . import audit, disk, dt, health, scans, teams, users
+from . import audit, backup, disk, dt, health, scans, teams, users
 
 # Apply the super-admin gate at the parent-router level so individual route
 # signatures stay clean — each route still gets the resolved CurrentUser
@@ -42,6 +43,7 @@ router.include_router(scans.router)
 router.include_router(disk.router)
 router.include_router(audit.router)
 router.include_router(health.router)
+router.include_router(backup.router)
 
 
 __all__ = ["router"]
