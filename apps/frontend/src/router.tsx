@@ -12,6 +12,7 @@ import { AdminScansPage } from "@/features/admin/scans/AdminScansPage";
 import { AdminTeamsPage } from "@/features/admin/teams/AdminTeamsPage";
 import { AdminUsersPage } from "@/features/admin/users/AdminUsersPage";
 import { ApprovalsPage } from "@/features/approvals/ApprovalsPage";
+import { IntegrationsPage } from "@/features/integrations/IntegrationsPage";
 import { ProjectCreatePage } from "@/features/projects/ProjectCreatePage";
 import { ProjectDetailPage } from "@/features/projects/ProjectDetailPage";
 import { ProjectListPage } from "@/features/projects/ProjectListPage";
@@ -19,6 +20,7 @@ import { ScansPage } from "@/features/scans/ScansPage";
 import { ForgotPasswordPage } from "@/pages/auth/ForgotPasswordPage";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { RegisterPage } from "@/pages/auth/RegisterPage";
+import { ResetPasswordPage } from "@/pages/auth/ResetPasswordPage";
 
 /**
  * Central route table — CLAUDE.md "Routing" convention.
@@ -38,6 +40,7 @@ export function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {/* Authenticated app shell — sidebar + header wrap all app routes */}
       <Route
@@ -54,6 +57,7 @@ export function AppRoutes() {
         <Route path="projects/:id" element={<ProjectDetailPage />} />
         <Route path="scans" element={<ScansPage />} />
         <Route path="approvals" element={<ApprovalsPage />} />
+        <Route path="integrations" element={<IntegrationsPage />} />
       </Route>
 
       {/* Admin section retains its own layout (existence-hide guard inside) */}

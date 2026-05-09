@@ -1,6 +1,7 @@
 import {
   ClipboardCheck,
   FolderOpen,
+  KeyRound,
   LogOut,
   ScanLine,
   Activity,
@@ -45,6 +46,12 @@ const MAIN_NAV: NavItem[] = [
     labelKey: "nav.approvals",
     icon: ClipboardCheck,
     testId: "nav-approvals",
+  },
+  {
+    to: "/integrations",
+    labelKey: "nav.integrations",
+    icon: KeyRound,
+    testId: "nav-integrations",
   },
 ];
 

@@ -62,6 +62,16 @@ jobs:
         working-directory: apps/frontend
         run: npm run lint
 
+      # chore A1 — i18n drift gate. Runs i18next-parser into a temp dir and
+      # compares against the committed src/locales/. Fails on any missing or
+      # stale key, or any EN ↔ KO parity gap. This guarantees that every
+      # `t('ns:key')` call site has a matching translation in BOTH locales
+      # — CLAUDE.md "EN/KO 번역 동시 반영" enforced at PR time.
+      - name: Run i18n drift check
+        if: matrix.target == 'frontend'
+        working-directory: apps/frontend
+        run: npm run i18n:check
+
   # -------------------------------------------------------------------------
   # 2) Typecheck — mypy (backend) + tsc (frontend)
   # -------------------------------------------------------------------------

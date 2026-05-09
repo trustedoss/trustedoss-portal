@@ -18,6 +18,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { postForgotPassword } from "@/lib/api";
 
 function buildSchema(t: (key: string) => string) {
   return z.object({
@@ -30,16 +31,27 @@ type ForgotValues = z.infer<ReturnType<typeof buildSchema>>;
 export function ForgotPasswordPage() {
   const { t } = useTranslation("auth");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const form = useForm<ForgotValues>({
     resolver: zodResolver(buildSchema(t)),
     defaultValues: { email: "" },
   });
 
-  function onSubmit(_values: ForgotValues) {
-    // The backend /auth/forgot-password endpoint lands in PR #18.
-    // For now we surface a stub success message so the UX is complete.
-    setSubmitted(true);
+  async function onSubmit(values: ForgotValues) {
+    setSubmitting(true);
+    try {
+      await postForgotPassword(values.email);
+    } catch {
+      // Anti-enumeration (CWE-204): we ALWAYS show the same confirmation,
+      // regardless of network failure or backend error. A leaked distinction
+      // ("network error" vs "ok") would tell an attacker the request reached
+      // the backend, which is itself signal. The user can retry from /login
+      // → /forgot-password if the link never arrives.
+    } finally {
+      setSubmitted(true);
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -82,7 +94,7 @@ export function ForgotPasswordPage() {
                     type="email"
                     autoComplete="email"
                     data-testid="forgot-email"
-                    disabled={submitted}
+                    disabled={submitted || submitting}
                     {...field}
                   />
                 </FormControl>
@@ -93,10 +105,10 @@ export function ForgotPasswordPage() {
           <Button
             type="submit"
             className="w-full"
-            disabled={submitted}
+            disabled={submitted || submitting}
             data-testid="forgot-submit"
           >
-            {t("forgot.submit")}
+            {submitting ? t("forgot.submitting") : t("forgot.submit")}
           </Button>
         </form>
       </Form>

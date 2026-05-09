@@ -249,6 +249,42 @@ export async function postLogout(): Promise<void> {
   } as AxiosRequestConfig & { _skipAuthRefresh?: boolean });
 }
 
+// ---------- forgot / reset password (chore A1) -----------------------------
+
+/**
+ * Request a password-reset link. The backend (PR #22) ALWAYS returns 204
+ * regardless of whether the email exists, so the UI must show the same
+ * confirmation either way (anti-enumeration, CWE-204).
+ *
+ * Per-email cooldown surfaces as a Retry-After header — we don't read it
+ * here because surfacing it would itself leak existence; the caller treats
+ * every outcome (including transport errors) the same.
+ */
+export async function postForgotPassword(email: string): Promise<void> {
+  await api.post("/auth/forgot-password", { email }, {
+    _skipAuthRefresh: true,
+  } as AxiosRequestConfig & { _skipAuthRefresh?: boolean });
+}
+
+/**
+ * Confirm a password reset using the one-shot token from the email link.
+ * On 204 the backend revokes every refresh token for the user.
+ * On 422 (invalid/expired/reused token) the call throws ProblemError —
+ * the caller maps `problem.title` to an i18n key for inline display.
+ */
+export async function postResetPassword(
+  token: string,
+  newPassword: string,
+): Promise<void> {
+  await api.post(
+    "/auth/reset-password",
+    { token, new_password: newPassword },
+    {
+      _skipAuthRefresh: true,
+    } as AxiosRequestConfig & { _skipAuthRefresh?: boolean },
+  );
+}
+
 // ---------- dev-only window hooks (e2e harness bridge) ---------------------
 
 if (import.meta.env.DEV && typeof window !== "undefined") {

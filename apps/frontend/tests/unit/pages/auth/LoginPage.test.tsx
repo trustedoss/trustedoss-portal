@@ -224,6 +224,68 @@ describe("LoginPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  // -------------------------------------------------------------------------
+  // chore B — OAuth buttons + ?error= mapping
+  // -------------------------------------------------------------------------
+
+  it("renders Sign-in-with-GitHub and Sign-in-with-Google buttons", () => {
+    renderLogin();
+    expect(screen.getByTestId("login-oauth-github")).toBeInTheDocument();
+    expect(screen.getByTestId("login-oauth-google")).toBeInTheDocument();
+  });
+
+  it("OAuth click navigates to /auth/oauth/<provider>/authorize with redirect_after", async () => {
+    // Stub window.location.href so the test never actually navigates. We
+    // assign a plain mutable container; jsdom's default is a Location object
+    // that throws on cross-origin assignment, but defining `href` as a sink
+    // avoids the navigation while keeping the assertion intact.
+    const original = window.location;
+    const sink = { href: "" };
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      writable: true,
+      value: sink,
+    });
+
+    try {
+      const user = userEvent.setup();
+      renderLogin("/login?redirect_after=%2Fprojects");
+
+      await user.click(screen.getByTestId("login-oauth-github"));
+      expect(sink.href).toMatch(/\/auth\/oauth\/github\/authorize/);
+      // redirect_after is propagated url-encoded.
+      expect(sink.href).toMatch(/redirect_after=%2Fprojects/);
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        writable: true,
+        value: original,
+      });
+    }
+  });
+
+  it("renders the OAuth error banner when ?error=oauth_denied", () => {
+    renderLogin("/login?error=oauth_denied");
+    const err = screen.getByTestId("login-oauth-error");
+    expect(err).toBeInTheDocument();
+    expect(err).toHaveTextContent(/cancelled|denied/i);
+  });
+
+  it("falls back to a generic banner for an unknown oauth_* code", () => {
+    renderLogin("/login?error=oauth_something_new");
+    const err = screen.getByTestId("login-oauth-error");
+    expect(err).toBeInTheDocument();
+    // The "unknown" message — we don't trust the raw query verbatim.
+    expect(err).toHaveTextContent(/something went wrong/i);
+  });
+
+  it("ignores non-oauth ?error= values (no banner)", () => {
+    renderLogin("/login?error=<script>alert(1)</script>");
+    expect(
+      screen.queryByTestId("login-oauth-error"),
+    ).not.toBeInTheDocument();
+  });
+
   it("L-1: success alert hides once a real submit error replaces it", async () => {
     mockedPostLogin.mockRejectedValueOnce(
       new ProblemError("invalid email or password", {

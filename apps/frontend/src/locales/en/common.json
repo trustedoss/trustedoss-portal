@@ -30,6 +30,7 @@
     "projects": "Projects",
     "scans": "Scans",
     "approvals": "Approvals",
+    "integrations": "Integrations",
     "admin": {
       "section": "Administration"
     }

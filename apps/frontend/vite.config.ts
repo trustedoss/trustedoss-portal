@@ -38,6 +38,9 @@ export default defineConfig({
         "src/main.tsx",
         "src/vite-env.d.ts",
         "src/locales/**",
+        // Pure type-only modules (no runtime exports). v8 coverage reports
+        // them at 0% even though tsc strips them at build time.
+        "src/types/**",
       ],
       // CLAUDE.md 품질·보안·운영 표준 §2: PR 머지 게이트는 신규/변경 코드
       // line coverage ≥ 80%. 부트스트랩 단계에서는 전역 라인 임계로 근사.
