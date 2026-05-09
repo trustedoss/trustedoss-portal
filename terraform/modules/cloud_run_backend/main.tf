@@ -12,8 +12,15 @@
 #   - APP_ENV=demo so the seed script's super-admin guard treats it as safe
 #     for one-off seeding (gcp-deploy.md operator runbook step 5).
 #
-# CORS: backed by ALLOWED_ORIGINS env (set by the operator to the frontend
-# Cloud Run URL after first apply). No wildcard.
+# DB connection (Chore O — security-reviewer H2 fix):
+#   The DSN is NOT templated in Terraform. Instead the four parts —
+#   DB_USER / DB_PASSWORD / DB_HOST / DB_NAME — are exposed as separate env
+#   vars; only DB_PASSWORD is sourced from Secret Manager. The application's
+#   core.config.database_url() composes the asyncpg DSN at runtime
+#   (CLAUDE.md core rule #11) and url-encodes the password.
+#
+# CORS: backed by CORS_ALLOWED_ORIGINS env (set by the operator to the
+# frontend Cloud Run URL after first apply). No wildcard.
 ###############################################################################
 
 terraform {
@@ -92,14 +99,25 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "REFRESH_TOKEN_EXPIRE_DAYS"
         value = "7"
       }
+
+      # ---- DB connection parts (composed at runtime by core.config) --------
+      # The asyncpg DSN is built inside the container by
+      # core.config.database_url() from these four env vars. DB_PASSWORD is
+      # the only one that comes from Secret Manager; the rest are plain env.
       env {
-        # asyncpg over the Cloud SQL Auth Proxy unix socket.
-        name  = "DATABASE_URL"
-        value = "postgresql+asyncpg://${var.db_user}:__DB_PASSWORD__@/${var.db_name}?host=/cloudsql/${var.cloud_sql_instance}"
-        # Note: __DB_PASSWORD__ is rewritten at container start by an entrypoint
-        # shim that reads /run/secrets/db_password (mounted from Secret
-        # Manager). This avoids a 'sensitive in plan' warning on the env block
-        # and follows CLAUDE.md core rule #11 (runtime os.getenv).
+        name  = "DB_USER"
+        value = var.db_user
+      }
+      env {
+        name  = "DB_HOST"
+        # Cloud SQL Auth Proxy mounts the postgres socket under /cloudsql.
+        # asyncpg treats the host segment as a unix socket path when it
+        # starts with '/', so this is a valid host for our composed DSN.
+        value = "/cloudsql/${var.cloud_sql_instance}"
+      }
+      env {
+        name  = "DB_NAME"
+        value = var.db_name
       }
       env {
         name  = "REDIS_URL"

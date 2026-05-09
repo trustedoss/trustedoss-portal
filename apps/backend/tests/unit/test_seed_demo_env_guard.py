@@ -140,3 +140,72 @@ def test_seed_demo_main_dry_run_refuses_prod(
     with pytest.raises(SystemExit) as exc_info:
         main(["--dry-run"])
     assert exc_info.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# Chore O / M2 — Demo super-admin password rotation
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_demo_password_uses_explicit_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit DEMO_SUPER_ADMIN_PASSWORD env is used verbatim."""
+    monkeypatch.setenv("APP_ENV", "demo")
+    monkeypatch.setenv("DEMO_SUPER_ADMIN_PASSWORD", "Hunter2-MinLen12-OK!!")
+    from scripts.seed_demo import _resolve_demo_password
+
+    assert _resolve_demo_password() == "Hunter2-MinLen12-OK!!"
+
+
+def test_resolve_demo_password_rejects_short_explicit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit but short (< 12 chars) password is refused."""
+    monkeypatch.setenv("APP_ENV", "demo")
+    monkeypatch.setenv("DEMO_SUPER_ADMIN_PASSWORD", "tooshort")
+    from scripts.seed_demo import _resolve_demo_password
+
+    with pytest.raises(RuntimeError, match="at least 12 characters"):
+        _resolve_demo_password()
+
+
+def test_resolve_demo_password_generates_random_in_dev(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without an explicit env, dev/demo gets a random password printed once."""
+    monkeypatch.setenv("APP_ENV", "demo")
+    monkeypatch.delenv("DEMO_SUPER_ADMIN_PASSWORD", raising=False)
+    from scripts.seed_demo import _resolve_demo_password
+
+    pw = _resolve_demo_password()
+    assert len(pw) >= 24  # token_urlsafe(18) yields 24+ chars
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out.strip())
+    assert payload["event"] == "seed_demo.generated_password"
+    assert payload["password"] == pw
+
+
+def test_resolve_demo_password_refuses_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production without an explicit env raises — never auto-generates."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("DEMO_SUPER_ADMIN_PASSWORD", raising=False)
+    from scripts.seed_demo import _resolve_demo_password
+
+    with pytest.raises(RuntimeError, match="DEMO_SUPER_ADMIN_PASSWORD is required"):
+        _resolve_demo_password()
+
+
+def test_resolve_demo_password_runtime_env_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The function MUST read env vars at call time (CLAUDE.md core rule #11)."""
+    monkeypatch.setenv("APP_ENV", "demo")
+    monkeypatch.setenv("DEMO_SUPER_ADMIN_PASSWORD", "FirstPasswordOK")
+    from scripts.seed_demo import _resolve_demo_password
+
+    assert _resolve_demo_password() == "FirstPasswordOK"
+    monkeypatch.setenv("DEMO_SUPER_ADMIN_PASSWORD", "SecondPasswordOK")
+    assert _resolve_demo_password() == "SecondPasswordOK"

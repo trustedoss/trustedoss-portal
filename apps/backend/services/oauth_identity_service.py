@@ -9,7 +9,7 @@ Two top-level entry points:
 
   - :func:`list_user_oauth_identities` — return the caller's connected
     OAuth identities, sorted oldest-first.
-  - :func:`unlink_oauth_identity` — DELETE one identity row, with two
+  - :func:`unlink_oauth_identity` — DELETE one identity row, with three
     domain guards:
       1. **Existence-hide on cross-user access** — an attempt to delete
          someone else's identity raises :class:`OAuthIdentityNotFoundError`,
@@ -21,6 +21,16 @@ Two top-level entry points:
          service raises :class:`OAuthUnlinkBlocksLoginError`. The caller
          must first set a password (via ``/auth/forgot-password``) or
          link a second provider.
+      3. **TOCTOU-safe last-method enforcement** (Chore O / H1) — the
+         guard takes a row-level ``SELECT ... FOR UPDATE`` on the owning
+         ``User`` row before counting siblings. Two concurrent
+         ``DELETE /oauth-identities/{a}`` + ``.../{b}`` against an
+         OAuth-only user (2 identities) cannot both observe
+         ``sibling_count=2`` and both succeed; the second transaction
+         blocks on the row lock, then re-counts (now 1) and raises
+         :class:`OAuthUnlinkBlocksLoginError` instead of locking the
+         user out. See ``docs/architecture-decisions/optimistic-
+         concurrency.md`` for the broader pattern.
 
 Audit:
   - The SQLAlchemy ``before_flush`` listener (``core.audit``) automatically
@@ -182,8 +192,18 @@ async def unlink_oauth_identity(
     # current ``hashed_password`` value — the actor's CurrentUser dataclass
     # does not carry it (and we wouldn't trust it for a security decision
     # if it did; the JWT is the credential, not a snapshot of the column).
+    #
+    # Chore O / H1 — TOCTOU-safe last-method guard: take a row-level lock
+    # on the User before counting siblings. Two concurrent unlink requests
+    # against an OAuth-only user (2 identities) cannot both observe
+    # ``sibling_count == 2`` and both succeed; the second transaction
+    # blocks here on the FOR UPDATE, then re-counts after the first commits
+    # and raises OAuthUnlinkBlocksLoginError instead of locking the user
+    # out. Pattern matches PR #11 (memory `feedback_optimistic_concurrency_pattern`).
     user = (
-        await session.execute(select(User).where(User.id == user_id))
+        await session.execute(
+            select(User).where(User.id == user_id).with_for_update()
+        )
     ).scalar_one_or_none()
     if user is None:
         # The auth dependency proved this user exists at request entry, so

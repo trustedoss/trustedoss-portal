@@ -56,6 +56,7 @@ import argparse
 import asyncio
 import json
 import os
+import secrets
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -78,7 +79,50 @@ _ALLOWED_ENVS = frozenset({"dev", "demo"})
 # is idempotent. Changing any of these counts as a fresh demo dataset.
 _DEMO_ORG_SLUG = "demo-org"
 _DEMO_SUPER_ADMIN_EMAIL = "admin@demo.trustedoss.dev"
-_DEMO_PASSWORD = "DemoAdmin2026!"  # noqa: S105 — public demo credential, documented in gcp-deploy.md  # nosec B105
+
+
+def _resolve_demo_password() -> str:
+    """Resolve the demo super-admin password at runtime (Chore O / M2).
+
+    Resolution order:
+      1. ``DEMO_SUPER_ADMIN_PASSWORD`` env var if set (must be ≥ 12 chars).
+      2. Random ``secrets.token_urlsafe(18)`` if ``APP_ENV`` is ``dev`` or
+         ``demo``. The generated password is printed once to stdout as a
+         JSON event so the Cloud Run seed Job's log captures it for the
+         operator. It is never persisted anywhere else.
+      3. ``RuntimeError`` for any other ``APP_ENV`` (production guard).
+
+    Replaces the previously-hardcoded ``DemoAdmin2026!`` constant. Called
+    at runtime per CLAUDE.md core rule #11 (no module-level env caching).
+    """
+    explicit = os.getenv("DEMO_SUPER_ADMIN_PASSWORD")
+    if explicit:
+        if len(explicit) < 12:
+            raise RuntimeError(
+                "DEMO_SUPER_ADMIN_PASSWORD must be at least 12 characters."
+            )
+        return explicit
+    app_env = os.getenv("APP_ENV", "dev").lower()
+    if app_env not in _ALLOWED_ENVS:
+        raise RuntimeError(
+            "DEMO_SUPER_ADMIN_PASSWORD is required when APP_ENV is "
+            f"{app_env!r}; refusing to generate a random demo password "
+            "outside dev/demo."
+        )
+    pw = secrets.token_urlsafe(18)
+    # Print once to stdout — the Cloud Run seed Job log captures this.
+    # The value is never written to file, env, or DB beyond the user row.
+    print(
+        json.dumps(
+            {
+                "event": "seed_demo.generated_password",
+                "email": _DEMO_SUPER_ADMIN_EMAIL,
+                "password": pw,
+            }
+        ),
+        flush=True,
+    )
+    return pw
 
 # Realistic fake CVE catalog. Severity buckets match VULN_SEVERITY_VALUES.
 # external_id format: CVE-YYYY-NNNNN. We use the 90000 range so the values
@@ -237,7 +281,7 @@ async def _seed() -> dict[str, Any]:  # noqa: PLR0915 — single linear seed rea
             await session.flush()
 
             # ── Users (5) ──────────────────────────────────────────────────
-            hashed_password = hash_password(_DEMO_PASSWORD)
+            hashed_password = hash_password(_resolve_demo_password())
 
             super_admin = User(
                 email=_DEMO_SUPER_ADMIN_EMAIL,

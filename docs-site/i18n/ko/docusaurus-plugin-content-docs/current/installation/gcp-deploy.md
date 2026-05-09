@@ -146,6 +146,7 @@ gsutil rm -r "gs://$PROJECT_ID-tfstate"
 
 ## 트러블슈팅
 
-- **Cloud Run 시작 프로브 실패**: `gcloud run services logs read $SERVICE_NAME --region=us-central1 --limit=100`로 로그 확인. 가장 흔한 원인은 DB 비밀번호 회전 후 `DATABASE_URL`이 오래된 경우다 — 시크릿은 컨테이너 시작 시 가져오므로 Cloud Run "Edit & Deploy New Revision"으로 강제 새로고침할 수 있다.
+- **Cloud Run 시작 프로브 실패**: `gcloud run services logs read $SERVICE_NAME --region=us-central1 --limit=100`로 로그 확인. 가장 흔한 원인은 Secret Manager 비밀번호 회전 후 `DB_PASSWORD` 값이 오래된 경우다 — Cloud Run은 컨테이너 시작 시 시크릿을 읽으므로 Cloud Run "Edit & Deploy New Revision"으로 강제 새로고침할 수 있다.
+- **DB 연결 환경변수 규약**: Cloud Run 모듈은 `DB_USER`, `DB_PASSWORD` (Secret Manager 출처), `DB_HOST` (`/cloudsql/<connection_name>` 유닉스 소켓), `DB_NAME`을 분리해 노출한다. 애플리케이션의 `core.config.database_url()`이 런타임에 asyncpg DSN을 합성하고 비밀번호를 URL-encode 한다 (CLAUDE.md 핵심 규칙 #11). Cloud Run revision에 `DATABASE_URL`을 **설정하지 말 것** — 합성 DSN을 덮어써 Secret Manager를 우회한다.
 - **`seed_demo.py`가 `APP_ENV=...`로 거부**: `dev`와 `demo`만 허용된다. Cloud Run 백엔드 배포는 이미 `APP_ENV=demo`를 설정한다. Auth Proxy를 거쳐 로컬에서 실행할 때는 명령어 앞에 `APP_ENV=demo`를 붙인다.
 - **VPC 피어링 오류**: 새 프로젝트에서 `google_service_networking_connection` 리소스가 API 활성화와 가끔 경합한다. `terraform apply`를 다시 실행한다.

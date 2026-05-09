@@ -10,6 +10,7 @@ docker-compose --env-file changes between sessions).
 from __future__ import annotations
 
 import os
+from urllib.parse import quote_plus
 
 DEFAULT_DATABASE_URL = "postgresql+asyncpg://trustedoss:trustedoss@postgres:5432/trustedoss"
 DEFAULT_REDIS_URL = "redis://redis:6379/0"
@@ -24,17 +25,80 @@ _DEV_PLACEHOLDER_SECRET = "dev-only-secret-key-min-32-chars-DO-NOT-USE-IN-PROD" 
 
 
 def database_url() -> str:
-    """Return the SQLAlchemy async DSN (asyncpg driver)."""
-    return os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+    """Return the SQLAlchemy async DSN (asyncpg driver).
+
+    Resolution order (Chore O — security-reviewer H2 fix):
+
+    1. ``DATABASE_URL`` — single connection string. Preserves docker-compose
+       dev/prod and any operator-supplied DSN. Returned verbatim.
+    2. Composed from ``DB_USER`` / ``DB_PASSWORD`` / ``DB_HOST`` / ``DB_NAME``
+       (+ optional ``DB_PORT``, default ``5432``). Used by the GCP Cloud Run
+       module which mounts ``DB_PASSWORD`` from Secret Manager — building the
+       URL at runtime keeps the secret out of Terraform state and out of the
+       Cloud Run revision spec.
+    3. Fallback to :data:`DEFAULT_DATABASE_URL` so unit tests and local bring-up
+       work without explicit configuration.
+
+    Per CLAUDE.md core rule #11 every ``os.getenv`` call happens here at
+    invocation time — no module-level caching.
+
+    The composed branch URL-encodes ``DB_PASSWORD`` via ``quote_plus`` so
+    passwords containing ``@``, ``:``, ``/``, ``#``, or ``%`` survive the round
+    trip into asyncpg's DSN parser.
+    """
+    direct = os.getenv("DATABASE_URL")
+    if direct:
+        return direct
+
+    user = os.getenv("DB_USER")
+    password = os.getenv("DB_PASSWORD")
+    host = os.getenv("DB_HOST")
+    name = os.getenv("DB_NAME")
+
+    # All-or-nothing on the composed path: a partial set is almost always a
+    # misconfiguration we want to fail fast on (rather than silently falling
+    # through to DEFAULT_DATABASE_URL and hitting a confusing auth error).
+    composed = [user, password, host, name]
+    if any(composed):
+        missing = [
+            label
+            for label, value in (
+                ("DB_USER", user),
+                ("DB_PASSWORD", password),
+                ("DB_HOST", host),
+                ("DB_NAME", name),
+            )
+            if not value
+        ]
+        if missing:
+            raise RuntimeError(
+                "DATABASE_URL not set and composed DB_* env vars incomplete; "
+                f"missing: {', '.join(missing)}"
+            )
+        # `missing` empty implies all four are set — narrow types for mypy.
+        assert user is not None
+        assert password is not None
+        assert host is not None
+        assert name is not None
+        port = os.getenv("DB_PORT", "5432")
+        # asyncpg accepts host=/cloudsql/... as a unix socket path encoded in
+        # the host segment (Cloud SQL Auth Proxy). quote_plus on the password
+        # is the only piece that needs URL escaping; the host comes from
+        # operator-controlled Terraform variables.
+        return (
+            f"postgresql+asyncpg://{user}:{quote_plus(password)}@{host}:{port}/{name}"
+        )
+
+    return DEFAULT_DATABASE_URL
 
 
 def database_url_sync() -> str:
     """
-    Sync DSN derived from DATABASE_URL.
+    Sync DSN derived from :func:`database_url`.
 
     Alembic runs migrations through the synchronous engine (psycopg2) while the
-    application uses asyncpg. We strip the +asyncpg suffix here so callers do
-    not have to think about driver dialects.
+    application uses asyncpg. We strip the ``+asyncpg`` suffix here so callers
+    do not have to think about driver dialects.
     """
     raw = database_url()
     return raw.replace("postgresql+asyncpg://", "postgresql://")

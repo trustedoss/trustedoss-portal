@@ -81,6 +81,11 @@ log = structlog.get_logger("admin.backup.api")
 # Hard cap for restore uploads — 10 GB. Larger archives are almost certainly
 # either an operator mistake or an attempt to fill the host disk.
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024
+# Decompression-bomb caps (Chore O / H3). The wire cap above does not bound
+# the extracted size — a 10 GB compressed archive can still inflate to TBs.
+# Per-member: 5 GiB; cumulative: 50 GiB.
+_MAX_MEMBER_BYTES = 5 * 1024 * 1024 * 1024
+_MAX_EXTRACTED_BYTES = 50 * 1024 * 1024 * 1024
 # Streaming chunk size for reads / writes.
 _CHUNK_SIZE = 1024 * 1024  # 1 MiB
 
@@ -90,11 +95,21 @@ _TYPE_AUTO_PROTECTED = "https://docs.trustedoss.io/errors/backup-auto-protected"
 _TYPE_CONFIRM_REQUIRED = "https://docs.trustedoss.io/errors/backup-restore-confirm-required"
 _TYPE_UPLOAD_TOO_LARGE = "https://docs.trustedoss.io/errors/backup-upload-too-large"
 _TYPE_INVALID_ARCHIVE = "https://docs.trustedoss.io/errors/backup-invalid-archive"
+_TYPE_DECOMPRESSION_BOMB = "https://docs.trustedoss.io/errors/backup-decompression-bomb"
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+class _DecompressionBombError(Exception):
+    """Internal — raised when an uploaded tar's extracted size exceeds caps.
+
+    Surfaced to clients as 413 + RFC 7807 ``backup-decompression-bomb``.
+    Distinguished from generic tar errors so the operator-facing message
+    can be precise about why the archive was rejected.
+    """
 
 
 def _emit_admin_audit(
@@ -379,14 +394,46 @@ async def restore_backup_endpoint(
     extract_dir.mkdir(parents=True, exist_ok=True)
     try:
         with tarfile.open(archive_path, mode="r:gz") as tar:  # nosemgrep
-            # Block path-traversal entries (..) and absolute paths.
+            # Block path-traversal entries (..) and absolute paths, AND
+            # enforce decompression-bomb caps (Chore O / H3). The wire cap
+            # bounds compressed bytes; without these caps a 10 GB archive
+            # could decompress to TBs and fill the host disk before
+            # extractall completes.
+            cumulative_bytes = 0
             for member in tar.getmembers():
                 if member.name.startswith("/") or ".." in Path(member.name).parts:
                     raise ValueError(f"unsafe tar member: {member.name!r}")
+                if member.size > _MAX_MEMBER_BYTES:
+                    raise _DecompressionBombError(
+                        f"tar member {member.name!r} size {member.size} exceeds "
+                        f"per-member cap {_MAX_MEMBER_BYTES}"
+                    )
+                cumulative_bytes += member.size
+                if cumulative_bytes > _MAX_EXTRACTED_BYTES:
+                    raise _DecompressionBombError(
+                        f"cumulative extracted size {cumulative_bytes} exceeds "
+                        f"cap {_MAX_EXTRACTED_BYTES}"
+                    )
             # Python 3.12+ filter="data" rejects symlinks/devices and members
             # whose resolved path escapes the destination directory. Combined
             # with the preflight loop above, extractall is safe here.
             tar.extractall(path=str(extract_dir), filter="data")  # noqa: S202  # nosemgrep
+    except _DecompressionBombError as exc:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        log.warning("admin.backup.upload_decompression_bomb", error=str(exc))
+        return problem_response(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            title="Backup Archive Decompression Bomb Blocked",
+            detail=(
+                "The uploaded archive expands beyond the maximum permitted "
+                "size when extracted. This is rejected to prevent host disk "
+                "exhaustion."
+            ),
+            instance=request.url.path,
+            type_=_TYPE_DECOMPRESSION_BOMB,
+            max_member_bytes=_MAX_MEMBER_BYTES,
+            max_extracted_bytes=_MAX_EXTRACTED_BYTES,
+        )
     except (tarfile.TarError, ValueError, OSError) as exc:
         shutil.rmtree(upload_dir, ignore_errors=True)
         log.error("admin.backup.upload_invalid_archive", error=str(exc))
