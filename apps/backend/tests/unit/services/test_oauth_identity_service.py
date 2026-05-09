@@ -350,6 +350,7 @@ async def test_unlink_writes_explicit_audit_row_with_hashed_pid(
     ).scalars().all()
     assert len(rows) == 1
     diff = rows[0].diff
+    assert diff is not None
     assert diff["provider"] == "google"
     assert diff["provider_user_id_hash"] == expected_hash
     # No raw provider_user_id field — the hash is the only forensic carrier.
