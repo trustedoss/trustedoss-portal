@@ -89,17 +89,30 @@ async def _factory(client: AsyncClient):
     return factory
 
 
-async def _create_inapp(session, *, user_id: uuid.UUID, **overrides) -> uuid.UUID:
+async def _create_inapp(
+    session: object,
+    *,
+    user_id: uuid.UUID,
+    kind: str = "scan_completed",
+    title: str = "Scan complete",
+    body: str = "Project foo finished scanning.",
+    link: str | None = None,
+    target_table: str | None = None,
+    target_id: uuid.UUID | None = None,
+) -> uuid.UUID:
     """Insert a notification row directly via the service (test-time helper)."""
     from services.notification_service import create_notification
 
-    payload: dict[str, object] = {
-        "kind": "scan_completed",
-        "title": "Scan complete",
-        "body": "Project foo finished scanning.",
-    }
-    payload.update(overrides)
-    row = await create_notification(session, user_id=user_id, **payload)
+    row = await create_notification(  # type: ignore[arg-type]
+        session,
+        user_id=user_id,
+        kind=kind,
+        title=title,
+        body=body,
+        link=link,
+        target_table=target_table,
+        target_id=target_id,
+    )
     return row.id
 
 
