@@ -132,10 +132,17 @@ export function useScanWebSocket(
   const reconnectStartedAtRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
   const terminalReachedRef = useRef(false);
+  // Tracks the latest reconnect attempt index so the `visibilitychange`
+  // handler can resume from the right slot when the tab becomes visible
+  // mid-backoff. We do not want to use React state here — the handler
+  // must read the freshest value synchronously without re-running the
+  // effect.
+  const lastAttemptRef = useRef(0);
 
   useEffect(() => {
     cancelledRef.current = false;
     terminalReachedRef.current = false;
+    lastAttemptRef.current = 0;
 
     if (!enabled || scanId == null || scanId === "") {
       // Nothing to do — make sure we report idle and clear any leftover state.
@@ -254,6 +261,7 @@ export function useScanWebSocket(
           setState("open");
           // Reset the reconnect budget once we've received a valid frame.
           reconnectStartedAtRef.current = null;
+          lastAttemptRef.current = 0;
           setReconnectAttempt(0);
           if (isTerminalStep(parsed.step)) {
             terminalReachedRef.current = true;
@@ -333,6 +341,7 @@ export function useScanWebSocket(
       }
       const nextAttempt = prevAttempt + 1;
       const delay = pickBackoff(prevAttempt);
+      lastAttemptRef.current = nextAttempt;
       setReconnectAttempt(nextAttempt);
       reconnectTimerRef.current = setTimeout(() => {
         reconnectTimerRef.current = null;
@@ -340,11 +349,58 @@ export function useScanWebSocket(
       }, delay);
     }
 
+    /**
+     * Visibility-change handler — Phase 6 PR #19 chore D.
+     *
+     * When the tab regains focus, an in-flight backoff timer can be
+     * stale: the network may have come back ten seconds ago but our
+     * timer is still queued for another 20 seconds (or 30, the cap).
+     * Browsers also throttle setTimeout in hidden tabs, so the user
+     * can sit on a "Reconnecting in 30s" UI long after the issue is
+     * gone.
+     *
+     * Behavior:
+     *   - On `visibilitychange` to `"visible"`: if the socket is
+     *     missing/closing OR a reconnect timer is pending, cancel the
+     *     pending timer and immediately call `open()` with the next
+     *     attempt index. We do NOT reset `reconnectStartedAtRef` —
+     *     the 5-minute budget continues to tick so a wedged backend
+     *     still surfaces as `state="error"` eventually.
+     *   - When the tab is hidden, we do nothing (no pause). The
+     *     active socket keeps streaming so a long scan completes even
+     *     if the user steps away.
+     */
+    function handleVisibilityChange() {
+      if (cancelledRef.current) return;
+      if (typeof document === "undefined") return;
+      if (document.visibilityState !== "visible") return;
+      const sock = socketRef.current;
+      const isWaiting = reconnectTimerRef.current !== null;
+      // readyState: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED.
+      const isDownOrClosing =
+        sock == null || sock.readyState === 2 || sock.readyState === 3;
+      if (!isWaiting && !isDownOrClosing) {
+        // Healthy connection — nothing to do.
+        return;
+      }
+      // Cancel the pending backoff slot, then reconnect now without
+      // resetting the cumulative budget.
+      clearReconnectTimer();
+      open(lastAttemptRef.current);
+    }
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
     open(0);
 
     return () => {
       cancelledRef.current = true;
       clearReconnectTimer();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
       const sock = socketRef.current;
       socketRef.current = null;
       if (sock != null) {

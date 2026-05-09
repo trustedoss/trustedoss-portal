@@ -8,7 +8,8 @@
       "scans": "Scan Queue",
       "disk": "Disk",
       "audit": "Audit Log",
-      "health": "System Health"
+      "health": "System Health",
+      "backup": "Backups"
     }
   },
   "admin": {
@@ -323,6 +324,48 @@
       },
       "no_detail": "—",
       "updated_at": "Updated {{when}}"
+    },
+    "backup": {
+      "title": "Backups",
+      "subtitle": "Automated daily backups + manual triggers + restore.",
+      "column": {
+        "name": "Name",
+        "kind": "Kind",
+        "created_at": "Created",
+        "size": "Size",
+        "db_revision": "DB revision",
+        "actions": "Actions"
+      },
+      "kind": {
+        "auto": "Auto",
+        "manual": "Manual"
+      },
+      "actions": {
+        "manual_trigger": "Run manual backup now",
+        "choose_file": "Upload and restore…",
+        "refresh": "Refresh",
+        "download": "Download",
+        "delete": "Delete",
+        "restore": "Restore"
+      },
+      "tooltip": {
+        "auto_pruned": "Auto backups are pruned after 7 days."
+      },
+      "confirm": {
+        "delete": "Delete the backup \"{{name}}\"? This is irreversible."
+      },
+      "restore": {
+        "warning": "Restoring will overwrite ALL data including users, projects, and scans. This is irreversible.",
+        "type_to_confirm": "Type '{{token}}' to confirm",
+        "queued_banner": "Restore queued. The backend will pause; reload after 30 seconds."
+      },
+      "toast": {
+        "manual_triggered": "Manual backup queued.",
+        "deleted": "Backup deleted.",
+        "download_started": "Download started.",
+        "restore_queued": "Restore queued."
+      },
+      "empty": "No backups yet. Trigger a manual backup or wait for the nightly job."
     },
     "errors": {
       "last_super_admin_protected": "You cannot demote or deactivate the only Super Admin.",
