@@ -27,7 +27,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from tests._helpers import (
@@ -37,7 +37,6 @@ from tests._helpers import (
     make_team,
     make_user,
     principal_for,
-    unique_suffix,
 )
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent.parent

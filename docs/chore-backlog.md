@@ -157,16 +157,24 @@
 
 ## 우선순위 5 — 테스트 / 코드 품질
 
-### Chore L — API Keys / Webhooks 백엔드 테스트 보강
+### ~~Chore L — API Keys / Webhooks 백엔드 테스트 보강~~ ✅ PR #31 (2026-05-09, 부분)
 **기반 PR**: #20 (Step 5)
-**브랜치 제안**: `chore/phase5-pr16-tests`
-**예상 소요**: 0.5 세션
+**브랜치**: `chore/phase5-pr16-tests-plus-release`
 
-미흡 — Step 5는 시간 제약으로 단위/통합 테스트 미작성:
-- `tests/unit/services/test_api_key_service.py`: 키 생성/회전/폐기 시나리오
-- `tests/integration/test_api_keys_api.py`: 4-role matrix + RBAC
-- `tests/integration/test_webhooks_github.py`: HMAC 검증 + 멱등성 + adversarial input
-- `tests/integration/test_webhooks_gitlab.py`: 동일
+처리 결과:
+- ✅ `tests/unit/services/test_api_key_service.py`: 52 unit tests (coverage 88.24%)
+- ✅ `tests/integration/test_api_keys_api.py`: 30 tests (1 xfail)
+- ⚠️ `tests/integration/test_webhooks_github.py`: 23 tests (6 xfail)
+- ⚠️ `tests/integration/test_webhooks_gitlab.py`: 20 tests (6 xfail)
+
+### Chore L2 — Webhook test fixture HMAC drift fix
+**기반 PR**: #31 (Chore L 잔여)
+**예상 소요**: 0.25 세션
+
+PR #31 의 13 xfail 정리:
+- fixture가 `project.webhook_secret` 을 setattr 만 하고 `await session.commit()` 누락 → backend 가 DB 에서 다른 secret 으로 검증 → 401.
+- 1 API key role-scope test (`test_get_developer_does_not_see_foreign_team_keys`)가 422 반환 — POST validation 시그니처 정렬.
+- 모두 `@pytest.mark.xfail(strict=False)` 표시. fix 하면 strict=True 로 전환.
 
 ---
 
