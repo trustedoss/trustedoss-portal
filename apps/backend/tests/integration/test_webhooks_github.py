@@ -192,7 +192,10 @@ async def test_valid_hmac_push_event_enqueues_scan(
     assert len(captured_dispatches) == 1
 
 
-@pytest.mark.xfail(reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately", strict=False)
+@pytest.mark.xfail(
+    reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately",
+    strict=False,
+)
 async def test_pull_request_event_also_enqueues(
     client: AsyncClient, captured_dispatches: list[str]
 ) -> None:
@@ -218,7 +221,10 @@ async def test_pull_request_event_also_enqueues(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately", strict=False)
+@pytest.mark.xfail(
+    reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately",
+    strict=False,
+)
 async def test_duplicate_delivery_id_is_idempotent(
     client: AsyncClient, captured_dispatches: list[str]
 ) -> None:
@@ -244,7 +250,10 @@ async def test_duplicate_delivery_id_is_idempotent(
     assert len(captured_dispatches) == 1
 
 
-@pytest.mark.xfail(reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately", strict=False)
+@pytest.mark.xfail(
+    reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately",
+    strict=False,
+)
 async def test_duplicate_delivery_persists_one_row(
     client: AsyncClient, captured_dispatches: list[str]
 ) -> None:
@@ -391,7 +400,10 @@ async def test_malformed_signature_returns_401(
     "event_type",
     ["issues", "issue_comment", "pull_request_review_comment", "ping", "release"],
 )
-@pytest.mark.xfail(reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately", strict=False)
+@pytest.mark.xfail(
+    reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately",
+    strict=False,
+)
 async def test_non_scan_event_returns_ignored_no_dispatch(
     client: AsyncClient, captured_dispatches: list[str], event_type: str
 ) -> None:
@@ -485,7 +497,10 @@ async def test_unknown_repo_returns_404(
     assert captured_dispatches == []
 
 
-@pytest.mark.xfail(reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately", strict=False)
+@pytest.mark.xfail(
+    reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately",
+    strict=False,
+)
 async def test_oversized_payload_does_not_500(
     client: AsyncClient, captured_dispatches: list[str]
 ) -> None:
@@ -513,7 +528,10 @@ async def test_oversized_payload_does_not_500(
     assert response.json()["status"] == "enqueued"
 
 
-@pytest.mark.xfail(reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately", strict=False)
+@pytest.mark.xfail(
+    reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately",
+    strict=False,
+)
 async def test_payload_with_control_bytes_in_repo_name_does_not_500(
     client: AsyncClient, captured_dispatches: list[str]
 ) -> None:

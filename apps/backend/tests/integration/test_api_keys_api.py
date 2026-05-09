@@ -440,7 +440,10 @@ async def test_get_list_never_returns_raw_key(client: AsyncClient) -> None:
         assert "key_hash" not in item
 
 
-@pytest.mark.xfail(reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately", strict=False)
+@pytest.mark.xfail(
+    reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately",
+    strict=False,
+)
 async def test_get_developer_does_not_see_foreign_team_keys(client: AsyncClient) -> None:
     """Cross-tenant: a developer in team_b does NOT see team_a's project keys."""
     factory = await _factory(client)

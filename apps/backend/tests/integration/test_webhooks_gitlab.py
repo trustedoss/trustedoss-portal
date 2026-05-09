@@ -131,14 +131,15 @@ async def _make_gitlab_project(
 
 
 def _push_payload(repo_url: str | None = "https://gitlab.com/acme/widgets") -> dict[str, object]:
+    safe_url = repo_url or "https://gitlab.com/unknown/unknown"
     return {
         "object_kind": "push",
         "ref": "refs/heads/main",
         "checkout_sha": secrets.token_hex(20),
         "project": {
-            "git_http_url": repo_url,
-            "git_ssh_url": repo_url.replace("https://", "git@").replace("/", ":", 1),
-            "web_url": repo_url,
+            "git_http_url": safe_url,
+            "git_ssh_url": safe_url.replace("https://", "git@").replace("/", ":", 1),
+            "web_url": safe_url,
         },
     }
 
@@ -173,7 +174,10 @@ async def test_valid_token_push_hook_enqueues_scan(
     assert len(captured_dispatches) == 1
 
 
-@pytest.mark.xfail(reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately", strict=False)
+@pytest.mark.xfail(
+    reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately",
+    strict=False,
+)
 async def test_merge_request_hook_enqueues_scan(
     client: AsyncClient, captured_dispatches: list[str]
 ) -> None:
@@ -195,7 +199,10 @@ async def test_merge_request_hook_enqueues_scan(
     assert len(captured_dispatches) == 1
 
 
-@pytest.mark.xfail(reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately", strict=False)
+@pytest.mark.xfail(
+    reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately",
+    strict=False,
+)
 async def test_missing_webhook_uuid_falls_back_to_checkout_sha(
     client: AsyncClient, captured_dispatches: list[str]
 ) -> None:
@@ -273,7 +280,10 @@ async def test_missing_token_header_returns_400(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately", strict=False)
+@pytest.mark.xfail(
+    reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately",
+    strict=False,
+)
 async def test_duplicate_webhook_uuid_is_idempotent(
     client: AsyncClient, captured_dispatches: list[str]
 ) -> None:
@@ -295,7 +305,10 @@ async def test_duplicate_webhook_uuid_is_idempotent(
     assert len(captured_dispatches) == 1
 
 
-@pytest.mark.xfail(reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately", strict=False)
+@pytest.mark.xfail(
+    reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately",
+    strict=False,
+)
 async def test_duplicate_persists_one_delivery_row(
     client: AsyncClient, captured_dispatches: list[str]
 ) -> None:
@@ -333,7 +346,10 @@ async def test_duplicate_persists_one_delivery_row(
     "event_header",
     ["Issue Hook", "Note Hook", "Pipeline Hook", "Job Hook", "Wiki Page Hook"],
 )
-@pytest.mark.xfail(reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately", strict=False)
+@pytest.mark.xfail(
+    reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately",
+    strict=False,
+)
 async def test_non_scan_event_returns_ignored_no_dispatch(
     client: AsyncClient, captured_dispatches: list[str], event_header: str
 ) -> None:
@@ -451,7 +467,10 @@ async def test_unknown_repo_returns_404(
     assert captured_dispatches == []
 
 
-@pytest.mark.xfail(reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately", strict=False)
+@pytest.mark.xfail(
+    reason="Chore L2 backlog — fixture webhook_secret/role-scope drift; investigate separately",
+    strict=False,
+)
 async def test_oversized_payload_does_not_500(
     client: AsyncClient, captured_dispatches: list[str]
 ) -> None:
