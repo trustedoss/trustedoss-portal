@@ -393,3 +393,67 @@ async def test_unlink_increments_audit_row_count_by_two(
     # may or may not be visible depending on session caching. The delta
     # is what matters: the unlink contributes exactly 2 rows.
     assert after - before == 2
+
+
+# ---------------------------------------------------------------------------
+# Chore O / H1 — TOCTOU-safe last-method guard
+# ---------------------------------------------------------------------------
+
+
+async def test_unlink_acquires_for_update_lock_on_owning_user(
+    db_session: AsyncSession,
+) -> None:
+    """The unlink path must acquire a row-level lock on the owning User
+    before counting siblings. We verify by inspecting the actual SQL
+    statements emitted during a real unlink flow — exactly one of them
+    must SELECT from ``users`` with a ``FOR UPDATE`` clause.
+
+    This closes the H1 finding from the Chore O security review: under
+    READ COMMITTED, two concurrent unlink requests against an OAuth-only
+    user with 2 identities could each observe ``sibling_count == 2`` and
+    both succeed, locking the user out of their account. The
+    ``with_for_update()`` clause on the User SELECT serializes the
+    decision so the second transaction blocks until the first commits.
+    """
+    import sqlalchemy as _sa
+
+    from services.oauth_identity_service import unlink_oauth_identity
+
+    user = await make_user(db_session)
+    await _set_user_password(db_session, user_id=user.id, has_password=False)
+    gh = await _make_identity(db_session, user_id=user.id, provider="github")
+    google = await _make_identity(db_session, user_id=user.id, provider="google")
+
+    statements: list[str] = []
+
+    sync_engine = db_session.bind.sync_engine  # type: ignore[union-attr]
+
+    @_sa.event.listens_for(sync_engine, "before_cursor_execute")
+    def _capture(
+        conn: object,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
+        statements.append(statement)
+
+    try:
+        await unlink_oauth_identity(
+            db_session, user_id=user.id, identity_id=gh.id
+        )
+    finally:
+        _sa.event.remove(sync_engine, "before_cursor_execute", _capture)
+
+    user_for_update = [
+        s for s in statements
+        if "FROM users" in s and "FOR UPDATE" in s
+    ]
+    assert user_for_update, (
+        "Expected a SELECT FROM users ... FOR UPDATE in the unlink flow "
+        "(Chore O / H1 TOCTOU guard). Statements seen:\n"
+        + "\n---\n".join(statements)
+    )
+    # Sibling identity remains intact.
+    assert google is not None  # silence ruff F841

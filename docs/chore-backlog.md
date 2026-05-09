@@ -202,15 +202,61 @@
 미흡:
 - `docs/sessions/2026-05-08-uat-manual-test-scenarios.md` 가 PR #14 시점 — 신규 12개 시나리오 추가 (forgot/reset, OAuth 로그인 + unlink, /integrations, /admin/backup, /notifications, WebSocket reconnect, GCP demo 배포, EN/KO 토글)
 
-### Chore O — security-reviewer pass (PRs #29 / #32 / #33)
+### ~~Chore O — security-reviewer pass (PRs #29 / #32 / #33)~~ ✅ PR #36 (2026-05-09)
 **우선순위**: 3 (CLAUDE.md §7 Producer-Reviewer 회수)
-**브랜치 제안**: `chore/security-reviewer-pass`
-**예상 소요**: 0.5 ~ 1 세션
+**브랜치**: `chore/security-reviewer-pass`
 
-미흡 — 자율 실행 시간 압박으로 security-reviewer 위임 생략:
-- PR #29 backup tar extraction + restore destructive flow + Celery subprocess argv
-- PR #32 dispatcher fan-out race / mark-read 다른 사용자 IDOR 가능성 / target_id UUID validation / polling DoS
-- PR #33 last-method 가드 race (TOCTOU) / provider_user_id_hash salt / audit PII / IDOR
+**처리 결과** — security-reviewer 에이전트 사후 검토. 0 Critical / 3 High / 5 Medium / 4 Low / 2 Info(passed). Tier 1+2의 H1/H2/H3/M2/M3 본 PR에서 fix:
+- **H1** OAuth identity unlink TOCTOU race → `with_for_update()` 행 lock + 회귀 가드 테스트 (`test_unlink_acquires_for_update_lock_on_owning_user`)
+- **H2** Terraform `__DB_PASSWORD__` placeholder 미동작 → 4분리 env (`DB_USER/PASSWORD/HOST/NAME`)로 변경, `core/config.database_url()` 런타임 합성
+- **H3** Backup restore decompression bomb → 멤버 5GiB / 누적 50GiB cap + 413 + RFC 7807 problem
+- **M2** Demo super-admin 비밀번호 하드코드 → `_resolve_demo_password()` 런타임 함수, `DEMO_SUPER_ADMIN_PASSWORD` env 우선, dev/demo는 랜덤 + stdout JSON 1회 출력
+- **M3** In-app notification opt-out drift → 422 가드 + RFC 7807 problem, frontend 계약 정합
+
+이월 (별도 chore — 본 backlog의 신규 항목 Q/R/S/T/U로 등재):
+- M1 (Cloud Run backend 앞 Cloud Armor / WAF + `--no-allow-unauthenticated`)
+- M4 (`_NAME_RE` regex가 uuid-suffix manual-* 형식 거부 — restore upload 충돌 케이스)
+- M5 (`scripts/restore.sh`의 `BACKUP_RESTORE_CONFIRM` env 우회 가능성 → argv flag로 변경)
+- L1 (notification.link 스킴 검증 — `//evil.com` 프로토콜-상대 URL 우회 방지)
+- L2 (Memorystore AUTH + transit encryption)
+- L3 (audit 로그에 masked actor email 추가 — structlog binding)
+- L4 (`provider_user_id_hash`에 HMAC salt — GitHub 숫자 user-id rainbow 방어)
+
+### Chore Q — Cloud Run backend 외부 노출 가드 (M1 이월)
+**우선순위**: 7 (Demo SaaS 운영 단계 진입 시 필수)
+**브랜치 제안**: `chore/cloud-run-backend-armor`
+**예상 소요**: 0.5 세션
+
+미흡 — 현재 `terraform/modules/cloud_run_*/main.tf`에서 `roles/run.invoker` → `allUsers` 바인딩으로 backend가 직접 외부 노출. Cloud Armor / IAP / Cloud LB 없이 FastAPI 전체 경로(login + admin)가 공개:
+- 옵션 A: `google_compute_security_policy` (Cloud Armor) + rate-limit + WAF rules + external HTTPS LB
+- 옵션 B: Cloud Run을 internal-only로 전환 + IAP 또는 LB 우회 단일 진입점 강제
+
+### Chore R — Backup upload 이름 충돌 + 정리 누수 (M4 + M5 이월)
+**우선순위**: 7 (운영 발견 시 사용성 저하)
+**브랜치 제안**: `chore/backup-upload-name-and-confirm-flag`
+**예상 소요**: 0.5 세션
+
+미흡:
+- M4: `target_path` 충돌 시 `manual-<utc>-<uuid6>` fallback이 `_NAME_RE = ^(auto|manual)-\d{8}T\d{6}Z$`를 위배 → restore task에서 `BackupNotFoundError` + orphan 디렉토리 잔존. 해결: 동초 충돌 시 `time.sleep(1)` + 재시도, 또는 regex에 uuid 접미사 허용
+- M5: `scripts/restore.sh`가 `BACKUP_RESTORE_CONFIRM=yes` env로 y/N 프롬프트 스킵 → 환경변수 leak 시 Confused Deputy. argv 플래그 (`--confirm`)로 전환
+
+### Chore S — Notification link / Memorystore AUTH (L1 + L2 이월)
+**우선순위**: 8
+**브랜치 제안**: `chore/notification-link-and-redis-auth`
+**예상 소요**: 0.5 세션
+
+미흡:
+- L1: `Notification.link` 검증 — `/`로 시작하고 `//`로 시작하지 않을 것 (Pydantic validator + 서버 가드)
+- L2: Memorystore Redis `auth_enabled = true` + `transit_encryption_mode = "SERVER_AUTHENTICATION"` + AUTH string Secret Manager binding
+
+### Chore T — Audit 로그 PII 보강 + provider_user_id_hash salt (L3 + L4 이월)
+**우선순위**: 8
+**브랜치 제안**: `chore/audit-pii-and-provider-hash-salt`
+**예상 소요**: 0.5 세션
+
+미흡:
+- L3: backup trigger / delete 로그에 `actor_email=mask_pii(actor.email)` 추가
+- L4: `_hash_provider_user_id`에 HMAC salt — `hashlib.blake2b(provider_user_id, key=settings.AUDIT_HASH_KEY)`. GitHub 숫자 user-id (~2^31)가 SHA-256 단독으로는 단일 GPU rainbow 가능
 
 ### Chore P — Trivy HIGH hard-fail + worker-image refresh
 **우선순위**: 6 (Phase 8 hardening)

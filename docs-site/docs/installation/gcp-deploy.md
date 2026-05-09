@@ -176,9 +176,16 @@ be re-seeded.
 
 - **Cloud Run startup probe failing**: check
   `gcloud run services logs read $SERVICE_NAME --region=us-central1 --limit=100`.
-  The most common cause is a stale `DATABASE_URL` after rotating the DB
-  password — secrets are fetched at container start, so a Cloud Run
-  "Edit & Deploy New Revision" forces a refresh.
+  The most common cause is a stale `DB_PASSWORD` value after rotating the
+  Secret Manager secret — Cloud Run reads the secret at container start, so
+  a Cloud Run "Edit & Deploy New Revision" forces a refresh.
+- **DB connection env-var contract**: the Cloud Run module exports
+  `DB_USER`, `DB_PASSWORD` (from Secret Manager), `DB_HOST`
+  (`/cloudsql/<connection_name>` unix socket), and `DB_NAME` separately. The
+  application's `core.config.database_url()` composes the asyncpg DSN at
+  runtime and url-encodes the password (CLAUDE.md core rule #11). Do **not**
+  set `DATABASE_URL` on the Cloud Run revision — it overrides the composed
+  DSN and bypasses Secret Manager.
 - **`seed_demo.py` refuses with `APP_ENV=...`**: only `dev` and `demo` are
   allowed. The Cloud Run backend deploy already sets `APP_ENV=demo`. When
   running locally over the Auth Proxy, prefix the command with

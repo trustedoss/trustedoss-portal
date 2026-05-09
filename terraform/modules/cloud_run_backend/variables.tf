@@ -9,7 +9,7 @@ variable "region" {
 }
 
 variable "project_id" {
-  description = "GCP project ID (used in env DATABASE_URL hostname when using Cloud SQL Auth Proxy)."
+  description = "GCP project ID (reserved for future per-project resource references)."
   type        = string
 }
 

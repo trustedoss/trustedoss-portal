@@ -79,6 +79,7 @@ async def get_notification_prefs(
 )
 async def put_notification_prefs(
     payload: NotificationPrefsIn,
+    request: Request,
     session: AsyncSession = Depends(get_db),
     actor: CurrentUser = Depends(get_current_user),
 ) -> Response:
@@ -88,7 +89,24 @@ async def put_notification_prefs(
     additional fields a caller may send (``user_id``, ``id``, ...) are
     ignored: Pydantic strips unknown fields by default and the service is
     keyed off ``actor.id``, never the body.
+
+    Chore O / M3 — In-app notifications cannot be disabled. The frontend
+    documents the in-app switch as "rendered but disabled"; this server-
+    side guard closes the API drift where a direct PUT could opt out.
     """
+    if not payload.in_app_enabled:
+        return problem_response(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            title="In-app notifications are required",
+            detail=(
+                "The in-app channel cannot be disabled. Email, Slack, and "
+                "Teams channels are individually opt-out, but in-app "
+                "delivery is always on so the inbox remains a complete "
+                "audit of notifications."
+            ),
+            instance=request.url.path,
+            type_="urn:trustedoss:problem:notification_in_app_required",
+        )
     prefs = await update_prefs(
         session,
         user_id=actor.id,

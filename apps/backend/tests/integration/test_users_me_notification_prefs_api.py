@@ -161,6 +161,8 @@ async def test_put_prefs_round_trips_all_toggles(client: AsyncClient) -> None:
         user = await make_user(session)
 
     headers = _bearer_for(user)
+    # Chore O / M3 — in_app_enabled cannot be disabled via this PUT.
+    # The other channels are individually opt-out.
     response = await client.put(
         "/v1/users/me/notification-prefs",
         headers=headers,
@@ -168,7 +170,7 @@ async def test_put_prefs_round_trips_all_toggles(client: AsyncClient) -> None:
             "email_enabled": False,
             "slack_enabled": True,
             "teams_enabled": True,
-            "in_app_enabled": False,
+            "in_app_enabled": True,
         },
     )
     assert response.status_code == 200, response.text
@@ -177,7 +179,7 @@ async def test_put_prefs_round_trips_all_toggles(client: AsyncClient) -> None:
         "email_enabled": False,
         "slack_enabled": True,
         "teams_enabled": True,
-        "in_app_enabled": False,
+        "in_app_enabled": True,
     }
 
     # GET round-trips.
@@ -223,7 +225,7 @@ async def test_put_prefs_extra_user_id_in_body_is_ignored(
             "email_enabled": False,
             "slack_enabled": True,
             "teams_enabled": True,
-            "in_app_enabled": False,
+            "in_app_enabled": True,  # Chore O / M3 — cannot be disabled
         },
     )
     assert response.status_code == 200
@@ -260,7 +262,7 @@ async def test_put_prefs_isolated_between_users(client: AsyncClient) -> None:
             "email_enabled": False,
             "slack_enabled": False,
             "teams_enabled": False,
-            "in_app_enabled": False,
+            "in_app_enabled": True,  # Chore O / M3 — cannot be disabled
         },
     )
     await client.put(
@@ -281,7 +283,71 @@ async def test_put_prefs_isolated_between_users(client: AsyncClient) -> None:
         "/v1/users/me/notification-prefs", headers=_bearer_for(bob)
     )
     assert alice_get.json()["email_enabled"] is False
-    assert alice_get.json()["in_app_enabled"] is False
+    assert alice_get.json()["in_app_enabled"] is True  # always-on
     assert bob_get.json()["email_enabled"] is True
     assert bob_get.json()["slack_enabled"] is True
     assert bob_get.json()["in_app_enabled"] is True
+
+
+# ---------------------------------------------------------------------------
+# Chore O / M3 — In-app channel cannot be disabled
+# ---------------------------------------------------------------------------
+
+
+async def test_put_prefs_in_app_disabled_returns_422(client: AsyncClient) -> None:
+    """In-app delivery is always-on. A direct PUT cannot opt out.
+
+    Closes the M3 finding from the Chore O security review: the frontend
+    documents the in-app switch as "rendered but disabled", but the
+    backend previously accepted ``in_app_enabled=False`` and silently
+    disabled the inbox. The 422 + RFC 7807 problem-details guard restores
+    the contract.
+    """
+    factory = await _factory(client)
+    async with factory() as session:
+        user = await make_user(session)
+
+    response = await client.put(
+        "/v1/users/me/notification-prefs",
+        headers=_bearer_for(user),
+        json={
+            "email_enabled": True,
+            "slack_enabled": False,
+            "teams_enabled": False,
+            "in_app_enabled": False,
+        },
+    )
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith(PROBLEM_JSON)
+    body = response.json()
+    assert body["type"] == "urn:trustedoss:problem:notification_in_app_required"
+    assert "in-app" in body["detail"].lower()
+
+
+async def test_put_prefs_in_app_disabled_does_not_persist(
+    client: AsyncClient,
+) -> None:
+    """The 422 guard runs before the service write — the row stays at defaults."""
+    factory = await _factory(client)
+    async with factory() as session:
+        user = await make_user(session)
+
+    headers = _bearer_for(user)
+    await client.put(
+        "/v1/users/me/notification-prefs",
+        headers=headers,
+        json={
+            "email_enabled": True,
+            "slack_enabled": True,
+            "teams_enabled": True,
+            "in_app_enabled": False,  # rejected — should not write
+        },
+    )
+    # State is still defaults (no row, or first GET-induced default row).
+    fresh = await client.get(
+        "/v1/users/me/notification-prefs", headers=headers
+    )
+    assert fresh.json()["in_app_enabled"] is True
+    # Other channels were not flipped on either.
+    assert fresh.json()["slack_enabled"] is False
+    assert fresh.json()["teams_enabled"] is False
