@@ -160,7 +160,7 @@ export function AdminLayout() {
           data-testid="admin-header"
         >
           <div className="flex items-baseline gap-3 text-sm">
-            <span className="font-semibold tracking-tight">{t("app.name")}</span>
+            <span className="font-semibold tracking-tight">{t("common:app.name")}</span>
           </div>
           <div className="flex items-center gap-3">
             <span
@@ -177,7 +177,7 @@ export function AdminLayout() {
               data-testid="admin-logout"
             >
               <LogOut className="h-4 w-4" aria-hidden />
-              <span>{t("auth.logout", { defaultValue: "Sign out" })}</span>
+              <span>{t("common:auth.logout", { defaultValue: "Sign out" })}</span>
             </Button>
           </div>
         </header>

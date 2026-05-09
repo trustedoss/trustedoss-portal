@@ -17,7 +17,11 @@ const DEFAULT_BASE_URL = "http://localhost:5173";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
-export type AuthPath = "/login" | "/register" | "/forgot-password";
+export type AuthPath =
+  | "/login"
+  | "/register"
+  | "/forgot-password"
+  | "/reset-password";
 
 export interface RegisterInput {
   email: string;
@@ -52,6 +56,24 @@ export class AuthHarness {
     await this.goto("/forgot-password");
   }
 
+  /** Alias of {@link gotoForgot} — matches the chore A1 spec naming. */
+  async gotoForgotPassword(): Promise<void> {
+    await this.goto("/forgot-password");
+  }
+
+  /**
+   * Navigate to /reset-password. Pass `null` to omit the `?token=` query —
+   * exercises the "missing token" branch which renders an inline error
+   * block instead of the form.
+   */
+  async gotoResetPassword(token: string | null): Promise<void> {
+    const suffix = token === null ? "" : `?token=${encodeURIComponent(token)}`;
+    await this.page.goto(`${this.baseUrl}/reset-password${suffix}`);
+    await expect(this.page.getByTestId("reset-page")).toBeVisible({
+      timeout: DEFAULT_TIMEOUT_MS,
+    });
+  }
+
   // ───── high-level verbs ────────────────────────────────────────────────
   async register({ email, password, displayName }: RegisterInput): Promise<void> {
     await this.page
@@ -74,6 +96,33 @@ export class AuthHarness {
       this.page.getByTestId("login-submit").click(),
     ]);
     await this.expectLoggedIn();
+  }
+
+  /**
+   * Submit the forgot-password form. The backend always returns 204 (anti-
+   * enumeration, CWE-204) so success view should appear regardless of whether
+   * the email exists. Returns when the success container is visible.
+   */
+  async submitForgotPassword(email: string): Promise<void> {
+    await this.page.getByTestId("forgot-email").fill(email);
+    await this.page.getByTestId("forgot-submit").click();
+    await expect(this.page.getByTestId("forgot-success")).toBeVisible({
+      timeout: DEFAULT_TIMEOUT_MS,
+    });
+  }
+
+  /**
+   * Assert the "invalid reset link" UI is shown. Reached when /reset-password
+   * is opened without a `?token=` query (or with an empty token).
+   */
+  async expectResetPasswordInvalidLink(): Promise<void> {
+    await expect(this.page.getByTestId("reset-invalid-link")).toBeVisible({
+      timeout: DEFAULT_TIMEOUT_MS,
+    });
+    // The form must NOT render in the missing-token branch — assert it's
+    // absent so a regression that re-mounts the form alongside the alert
+    // would fail loudly.
+    await expect(this.page.getByTestId("reset-form")).toHaveCount(0);
   }
 
   /** Submit login expecting a 4xx — stays on /login, alert is rendered. */
@@ -240,6 +289,7 @@ const AUTH_PAGE_TESTID: Record<AuthPath, string> = {
   "/login": "login-page",
   "/register": "register-page",
   "/forgot-password": "forgot-page",
+  "/reset-password": "reset-page",
 };
 
 function cryptoUuid(): string {

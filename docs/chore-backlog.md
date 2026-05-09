@@ -8,16 +8,25 @@
 
 ## 우선순위 1 — 사용자 가시성 / GA blocker
 
-### Chore A — 알림 센터 + 비밀번호 찾기 + i18n 게이트
-**기반 PR**: #22 (Step 7 backend)
-**브랜치 제안**: `chore/phase6-pr18-frontend`
-**예상 소요**: 1 세션
+### Chore A1 — 비밀번호 찾기 + i18n 게이트 (frontend-only)
+**기반 PR**: #22 (Step 7 backend — `/auth/forgot-password`, `/auth/reset-password` 존재)
+**브랜치 제안**: `chore/frontend-bundle`
+**예상 소요**: 0.5 세션
 
 미흡:
-- `/notifications` 페이지 + 헤더 벨 아이콘 (인앱 알림 목록, 읽음/안읽음)
-- `/forgot-password` + `/reset-password` 프론트 화면 → backend `/auth/forgot-password`, `/auth/reset-password` 연동
-- 사용자 설정 페이지: 채널별 ON/OFF (email/slack/teams)
-- `i18next-parser` CI 게이트: `untranslated` 카운트 0 강제
+- `/forgot-password` 프론트 화면 → backend `/auth/forgot-password` 연동 (현재 stub)
+- `/reset-password` 프론트 화면 신규 (`?token=` 쿼리 파라미터 → `/auth/reset-password` POST)
+- `i18next-parser` CI 게이트: EN/KO drift 0 강제
+
+### Chore A2 — 인앱 알림 센터 + 채널 ON/OFF (backend + frontend)
+**기반 PR**: 없음 (PR #22 는 outbound dispatcher 만 배포, in-app notification center 백엔드 미존재)
+**브랜치 제안**: `chore/phase6-inapp-notifications`
+**예상 소요**: 1.5 세션
+
+미흡 — **백엔드 신규 작업 필요**:
+- 백엔드: `notifications` 테이블 + Alembic + `/v1/notifications` (GET list, PATCH /:id/read), `/v1/users/me/notification-prefs` (PUT)
+- 프론트: `/notifications` 페이지 + 헤더 벨 아이콘 (읽음/안읽음 카운트)
+- 프론트: 사용자 설정 페이지 — 채널별 ON/OFF (email/slack/teams)
 
 ### Chore B — Frontend OAuth 버튼
 **기반 PR**: #26 (Step 11 backend)
