@@ -212,14 +212,18 @@ export class NotificationsHarness {
       teams: "notifications-prefs-teams",
       in_app: "notifications-prefs-in-app",
     };
+    // The Switch component renders the testid on the underlying
+    // `<input type="checkbox">`. State surfaces via `aria-checked`
+    // ("true" / "false") on the input — `data-state` lives on the
+    // wrapping `<label>` and is not addressable through the testid.
     const sw = this.page.getByTestId(map[channel]);
     await expect(sw).toBeVisible({ timeout: DEFAULT_TIMEOUT_MS });
-    const current = await sw.getAttribute("data-state");
-    const want = enabled ? "checked" : "unchecked";
+    const current = await sw.getAttribute("aria-checked");
+    const want = enabled ? "true" : "false";
     if (current === want) return;
     await sw.click();
     await expect
-      .poll(() => sw.getAttribute("data-state"), {
+      .poll(() => sw.getAttribute("aria-checked"), {
         timeout: DEFAULT_TIMEOUT_MS,
       })
       .toBe(want);
@@ -250,12 +254,15 @@ export class NotificationsHarness {
     const sw = this.page.getByTestId("notifications-prefs-in-app");
     await expect(sw).toBeVisible({ timeout: DEFAULT_TIMEOUT_MS });
     await expect(sw).toBeDisabled();
-    // shadcn Switch surfaces state via `data-state`. Checked = "checked".
+    // The Switch renders the testid on the `<input role="switch">`;
+    // checked-state surfaces via `aria-checked` on the input itself
+    // (`data-state` lives on the wrapping `<label>` and is not reached
+    // through the testid). Mirrors `togglePreference`'s contract.
     await expect
-      .poll(() => sw.getAttribute("data-state"), {
+      .poll(() => sw.getAttribute("aria-checked"), {
         timeout: DEFAULT_TIMEOUT_MS,
       })
-      .toBe("checked");
+      .toBe("true");
   }
 
   // ───── adversarial / API-direct ───────────────────────────────────────
@@ -298,12 +305,19 @@ export class NotificationsHarness {
   }
 
   /**
-   * Resolve the backend host. The SPA dev server proxies `/v1/*` to
-   * the FastAPI container; in CI the request can also go straight to
-   * port 8000. We fall back to the proxied path so the harness works
-   * in both topologies.
+   * Resolve the backend host. Vite has no `/v1/*` proxy in this repo,
+   * so adversarial direct-fetch scenarios must hit FastAPI on port 8000
+   * the same way the SPA's axios layer does. Order:
+   *   1. BACKEND_BASE_URL — explicit CI / local override
+   *   2. VITE_API_BASE_URL — mirrors the SPA's runtime resolution
+   *      (apps/frontend/src/lib/api.ts) so a single env flips both
+   *   3. http://localhost:8000 — default dev-stack mapped port
    */
   private backendBaseUrl(): string {
-    return process.env.BACKEND_BASE_URL ?? this.baseUrl;
+    return (
+      process.env.BACKEND_BASE_URL ??
+      process.env.VITE_API_BASE_URL ??
+      "http://localhost:8000"
+    );
   }
 }

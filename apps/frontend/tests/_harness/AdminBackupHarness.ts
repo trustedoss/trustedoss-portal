@@ -280,7 +280,11 @@ export class AdminBackupHarness {
   }
 
   private backendBaseUrl(): string {
-    return process.env.BACKEND_BASE_URL ?? this.baseUrl;
+    return (
+      process.env.BACKEND_BASE_URL ??
+      process.env.VITE_API_BASE_URL ??
+      "http://localhost:8000"
+    );
   }
 }
 
