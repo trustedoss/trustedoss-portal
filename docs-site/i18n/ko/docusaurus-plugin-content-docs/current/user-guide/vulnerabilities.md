@@ -8,12 +8,12 @@ sidebar_position: 4
 
 # 취약점
 
-**Vulnerabilities** 탭은 스캔 파이프라인이 프로젝트 컴포넌트와 상관시킨 모든 미해결 CVE를 나열합니다. 결과는 스캔을 거쳐 영속화됩니다 — CVE가 한번 발견되면 근본 컴포넌트가 제거·업그레이드될 때까지 status와 분류 노트와 함께 프로젝트 이력에 남습니다.
+**Vulnerabilities** 탭은 스캔 파이프라인이 프로젝트 컴포넌트와 상관시킨 모든 미해결 CVE(Common Vulnerabilities and Exposures)를 나열합니다. 결과는 스캔을 거쳐 영속화됩니다 — CVE가 한번 발견되면 근본 컴포넌트가 제거·업그레이드될 때까지 상태와 분류 노트와 함께 프로젝트 이력에 남습니다.
 
 ![프로젝트 상세 — 심각도 필터와 행별 CVE 링크가 있는 Vulnerabilities 탭](/img/screenshots/user-vulns-list.png)
 
 :::note 대상 독자
-개별 결과를 분류하는 엔지니어; SLA를 추적하는 보안 리드. VEX status 변경은 `developer` 이상; 일괄 억제는 `team_admin`.
+개별 결과를 분류하는 엔지니어; SLA를 추적하는 보안 리드. VEX 상태 변경은 `developer` 이상; 일괄 억제는 `team_admin`.
 :::
 
 ## 심각도 모델
@@ -30,7 +30,7 @@ sidebar_position: 4
 
 ## VEX 상태 머신
 
-결과는 [CycloneDX VEX](https://cyclonedx.org/capabilities/vex/) 7-state 모델을 따릅니다. 각 결과는 **신규**에서 시작하며 분석가가 분류함에 따라 전환됩니다.
+결과는 [CycloneDX VEX(Vulnerability Exploitability eXchange)](https://cyclonedx.org/capabilities/vex/) 7-state 모델을 따릅니다. 각 결과는 **신규**에서 시작하며 분석가가 분류함에 따라 전환됩니다.
 
 | 상태 | 정의 | 빌드 게이트 |
 |---|---|---|
@@ -57,7 +57,7 @@ sidebar_position: 4
 - **CVSS** — 상위 피드의 CVSS v3 숫자 점수.
 - **제목 (Title)** — 권고문의 짧은 요약.
 - **영향 (Affected)** — 영향 받는 컴포넌트(`name@version`).
-- **상태 (Status)** — 현재 VEX status.
+- **상태 (Status)** — 현재 VEX 상태.
 - **발견 시각 (Discovered)** — 결과가 처음 등장한 시점.
 
 상단 인라인 필터 바: 심각도, 상태, 그리고 **검색** 박스(CVE ID / 제목 / 컴포넌트 자유 텍스트), 정렬·정렬 순서 컨트롤.
@@ -69,8 +69,8 @@ sidebar_position: 4
 - **요약 (Summary)** — 제목, 설명, CWE, CVSS 벡터.
 - **참고 자료 (References)** — 벤더 권고, 수정 커밋, 익스플로잇 데이터베이스.
 - **영향 (Affected)** — 상위에서 보고한 영향 범위와 본 프로젝트 컴포넌트 버전 강조, 그리고 `fixed_version`(수정이 포함된 상위 버전, 가용 시).
-- **분석 (Analysis)** — VEX status 전환별 액션 버튼(허용된 전환마다 한 개씩: Confirm, Mark exploitable, Mark not affected, Mark in triage, Mark resolved, Mark false positive, Mark not applicable). 버튼을 클릭하면 사유 입력 다이얼로그가 열리며 제출합니다. `developer` 이상만.
-- **이력 (History)** — VEX status 전환 타임라인(누가, 언제, 어떤 사유로 status를 변경했는지).
+- **분석 (Analysis)** — VEX 상태 전환별 액션 버튼(허용된 전환마다 한 개씩: Confirm, Mark exploitable, Mark not affected, Mark in triage, Mark resolved, Mark false positive, Mark not applicable). 버튼을 클릭하면 사유 입력 다이얼로그가 열리며 제출합니다. `developer` 이상만.
+- **이력 (History)** — VEX 상태 전환 타임라인(누가, 언제, 어떤 사유로 상태를 변경했는지).
 
 ![취약점 드로어 — VEX 액션 버튼과 사유 입력 텍스트 영역이 있는 Analysis 섹션](/img/screenshots/user-vulns-drawer-vex.png)
 

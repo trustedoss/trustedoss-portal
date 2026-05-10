@@ -8,7 +8,7 @@ sidebar_position: 4
 
 # Vulnerabilities
 
-The **Vulnerabilities** tab lists every open CVE the scan pipeline correlated against the project's components. Findings persist across scans — once a CVE is found, it stays in the project's history with its status and triage notes until the underlying component is removed or upgraded.
+The **Vulnerabilities** tab lists every open CVE (Common Vulnerabilities and Exposures) the scan pipeline correlated against the project's components. Findings persist across scans — once a CVE is found, it stays in the project's history with its status and triage notes until the underlying component is removed or upgraded.
 
 ![Project detail — Vulnerabilities tab with severity filter and per-row CVE links](/img/screenshots/user-vulns-list.png)
 
@@ -30,7 +30,7 @@ The default policy fails the build only on `Critical`. Project owners can lower 
 
 ## VEX state machine
 
-Findings follow the [CycloneDX VEX](https://cyclonedx.org/capabilities/vex/) seven-state model. Each finding starts in **New** and transitions as analysts triage it.
+Findings follow the [CycloneDX VEX (Vulnerability Exploitability eXchange)](https://cyclonedx.org/capabilities/vex/) seven-state model. Each finding starts in **New** and transitions as analysts triage it.
 
 | State | Definition | Build gate |
 |---|---|---|

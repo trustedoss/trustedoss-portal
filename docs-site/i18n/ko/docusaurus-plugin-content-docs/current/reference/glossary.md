@@ -1,0 +1,182 @@
+---
+id: glossary
+title: 용어집
+description: TrustedOSS Portal 도메인 용어 — SCA, SBOM, VEX, 라이선스 단계, RBAC 역할, CycloneDX / SPDX 매핑.
+sidebar_label: 용어집
+sidebar_position: 4
+---
+
+# 용어집
+
+본 사이트 전반에서 사용하는 도메인 용어의 단일 진실 문서입니다.
+각 항목은 **풀네임**, **약어**(사용 시), 관련 명세나 상위 프로젝트로
+연결되는 **표준 참조 링크**를 함께 제공합니다.
+
+:::note 대상 독자
+본 사이트의 나머지 페이지를 읽는 모든 사람. 첫 방문 시 한 번 훑어
+보고, 사용자·관리자·기여자 가이드를 읽는 동안 탭에 열어 두세요.
+:::
+
+## SCA 핵심
+
+- **SCA — Software Composition Analysis.** 소프트웨어 프로젝트에서
+  제3자(오픈소스) 컴포넌트를 탐지하고, 라이선스를 분류하며, 알려진
+  취약점을 식별하는 분야. TrustedOSS Portal은 SCA 도구입니다.
+- **SBOM — Software Bill of Materials.** 소프트웨어에 포함된 모든
+  컴포넌트(버전·라이선스·공급자 포함)의 기계 가독 명세. TrustedOSS
+  Portal은 CycloneDX(JSON·XML)와 SPDX(JSON·Tag-Value) 형식으로
+  SBOM을 내보냅니다.
+  [CISA SBOM 자료](https://www.cisa.gov/sbom) 참고.
+- **CycloneDX.** OWASP가 관리하는 SBOM 명세. TrustedOSS는 1.6
+  버전(JSON·XML)을 사용합니다.
+  [cyclonedx.org/specification](https://cyclonedx.org/specification/)
+  참고.
+- **SPDX — Software Package Data Exchange.** Linux Foundation이
+  관리하는 SBOM 명세. TrustedOSS는 2.3 버전(JSON·Tag-Value)을
+  사용합니다. [spdx.dev](https://spdx.dev/) 참고.
+
+## 취약점
+
+- **CVE — Common Vulnerabilities and Exposures.** 공개된 보안 결함의
+  업계 표준 식별자. `CVE-YYYY-NNNN` 형식. MITRE가 관리합니다.
+  [cve.org](https://www.cve.org/) 참고.
+- **CWE — Common Weakness Enumeration.** 소프트웨어 약점 유형 분류
+  체계(예: CWE-79 크로스 사이트 스크립팅). 각 CVE는 하나 이상의 CWE
+  항목을 참조합니다.
+- **NVD — National Vulnerability Database.** CVE 위에 NIST가 분석
+  레이어를 얹은 것 — CVSS 점수, CPE 매칭, 참조 링크를 추가합니다.
+  [nvd.nist.gov](https://nvd.nist.gov/) 참고.
+- **OSV — Open Source Vulnerabilities database.** Google이 주도하는
+  생태계별(npm, PyPI, Maven 등) 취약점 데이터베이스.
+  [osv.dev](https://osv.dev/) 참고.
+- **GHSA — GitHub Security Advisory.** GitHub의 생태계별 권고문
+  피드. CVE ID는 종종 GHSA를 통해 발급됩니다.
+- **VEX — Vulnerability Exploitability eXchange.** 알려진 취약점이
+  특정 제품에 실제로 영향을 미치는지 단언하는 문서 형식. CycloneDX의
+  `analysis.state`와 SPDX VEX 두 가지가 주된 인코딩입니다. TrustedOSS는
+  CycloneDX 7-state 모델을 구현합니다 — `new`, `analyzing`,
+  `exploitable`, `not_affected`, `false_positive`, `suppressed`,
+  `fixed`. [CycloneDX VEX](https://cyclonedx.org/capabilities/vex/)
+  참고.
+
+### VEX 7-state — 상태별 액션 버튼
+
+취약점 드로어의 Analysis 섹션은 현재 상태에 따라 최대 7개의 액션
+버튼을 노출합니다. 매핑은 다음과 같습니다.
+
+| 현재 상태 | 가능한 액션 (버튼 라벨) |
+|---|---|
+| `new` | Move to analyzing, Mark exploitable, Mark not affected, Mark false positive, Suppress, Mark fixed |
+| `analyzing` | Mark exploitable, Mark not affected, Mark false positive, Suppress, Mark fixed |
+| `exploitable` | Mark not affected, Mark false positive, Mark fixed |
+| `not_affected` | Reopen as new, Mark exploitable, Mark fixed |
+| `false_positive` | Reopen as new, Mark exploitable |
+| `suppressed` | Reopen as new |
+| `fixed` | Reopen as new |
+
+각 버튼은 `vulnerability_findings.update` 행을 `audit_logs`에
+기록하며, `diff` 컬럼에 `previous_status` → `new_status` 전환이
+담깁니다.
+
+## 도구
+
+- **ORT — OSS Review Toolkit.** 프로젝트의 패키지 생태계(Gradle,
+  Maven, npm, pip, Cargo, …)를 탐색하고 의존성 그래프를 해석하며
+  컴포넌트별 declared / detected 라이선스를 발신하는 스캐너.
+  TrustedOSS는 모든 소스 스캔의 두 번째 단계로 ORT를 호출합니다.
+  [oss-review-toolkit.org](https://oss-review-toolkit.org/) 참고.
+- **cdxgen — CycloneDX Generator.** 30개 이상의 언어 / 빌드 시스템
+  매니페스트(`package.json`, `pom.xml`, `requirements.txt`, …)로부터
+  CycloneDX SBOM을 생성하는 컴포넌트 탐지기. ORT 이전 첫 번째 스캔
+  단계로 실행됩니다.
+- **Trivy.** Aqua Security가 만든 컨테이너 및 OS 패키지 취약점
+  스캐너. TrustedOSS는 컨테이너 스캔 파이프라인에 Trivy를 사용합니다
+  (cdxgen + ORT 소스 스캔 경로와는 분리).
+- **DT — Dependency-Track.** NVD / OSV / GHSA를 미러링하여 SBOM과 CVE를
+  대조하는 취약점 인텔리전스 플랫폼. TrustedOSS는 DT 4.x를 옵션 Docker
+  Compose 오버레이로 번들하고, 회로 차단기 + 캐시 레이어로 감쌉니다.
+  [dependencytrack.org](https://dependencytrack.org/) 참고.
+
+## 라이선스 분류
+
+포털은 라이선스를 네 개의 **단계(tier)** 로 분류합니다.
+
+| 단계 (코드 값) | UI 라벨 | 빌드 게이트 효과 |
+|---|---|---|
+| `forbidden` | Forbidden | 빌드 실패 — CI 종료 코드 1 |
+| `conditional` | Conditional | 컴포넌트 승인 필요; 승인 전까지 경고 |
+| `permissive` | Allowed | 제한 없음 |
+| `unknown` | Unknown | 검토 대상으로 노출; 자동 차단 없음 |
+
+분류는 `apps/backend/tasks/scan_source.py` 의
+`_LICENSE_CATEGORY_DEFAULTS` 사전이 결정합니다(운영자 측 오버라이드
+경로; ORT 기반 조직별 룰은 v2.2 로드맵 항목). API 응답·감사 로그·
+빌드 게이트 결정에는 `forbidden` / `conditional` / `permissive` /
+`unknown` 값이, UI 테이블·배지에는 `Forbidden` / `Conditional` /
+`Allowed` / `Unknown` 라벨이 노출됩니다.
+[컴포넌트와 라이선스](../user-guide/components-and-licenses.md#라이선스-분류)
+참고.
+
+## 빌드 게이트
+
+포털은 CI 차단 메커니즘을 하나 노출하며 이를 **빌드 게이트**라고
+부릅니다(일부 운영자 대상 맥락에서는 **정책 게이트**라는 표기도
+사용 — 동일한 대상입니다). 게이트는 다음을 평가합니다.
+
+1. 프로젝트의 심각도 하한(기본 `Critical`; 프로젝트별
+   `policy_gate.severity_floor` 구성 가능) 이상에 해당하는 CVE가
+   있는가?
+2. `forbidden` 라이선스 단계의 컴포넌트가 있는가?
+
+둘 중 하나라도 참이면 CI 통합의 컴포지트 액션은 종료 코드 1을
+반환합니다. 실패한 게이트는 위반 CVE / 라이선스 목록과 함께
+`audit_logs`에 기록됩니다.
+
+## RBAC 역할
+
+- **`super_admin`** — 시스템 전체. 사용자·팀·DT·스캔 큐·디스크·감사
+  로그를 관리합니다. 설치 마법사 또는 `create_super_admin.py`
+  스크립트가 생성합니다.
+- **`team_admin`** — 단일 팀 범위. 팀 설정·팀원·팀 내 프로젝트
+  가시성을 관리합니다.
+- **`developer`** — 한 팀의 프로젝트 집합 범위. 스캔 실행·결과 조회·
+  승인 검토를 수행합니다.
+
+한 사용자가 소속된 팀마다 다른 역할을 보유할 수 있습니다
+(예: 팀 A에서는 `team_admin`, 팀 B에서는 `developer`). 모든 할당은
+`/admin/users/<id>` 의 Memberships 드로어에 표시됩니다.
+
+## API Key 범위
+
+API Key는 단일 **scope** 를 가집니다.
+
+| Scope | 발급 권한 | 효과 |
+|---|---|---|
+| `org` | super-admin 전용 | 조직 내 모든 엔드포인트 인증 |
+| `team` | super-admin, team-admin | 한 팀의 프로젝트 범위 |
+| `project` | super-admin, team-admin, developer (본인 팀 프로젝트 한정) | 한 프로젝트 범위 |
+
+v2.0.0 에는 액션 단위 허용 목록이 없습니다 — 올바른 scope의 키로
+인증된 호출자는 API Key를 받는 어떤 엔드포인트라도 호출할 수
+있습니다. 액션 단위 권한은 로드맵 항목입니다.
+
+## 운영 용어
+
+- **회로 차단기 (CLOSED / OPEN / HALF_OPEN).** 실패 도메인을 격리
+  하는 패턴. TrustedOSS는 DT API 클라이언트를 회로 차단기로 감쌉니다
+  — CLOSED = 정상, OPEN = DT 도달 불가(포털이 캐시된 취약점 데이터를
+  반환), HALF_OPEN = 쿨다운 종료 후 다음 프로브가 결정.
+  [On-call 런북 → 시나리오 1 (DT 다운)](../admin-guide/oncall-runbook.md)
+  참고.
+- **`audit_logs`.** 상태를 변경하는 모든 작업(1급 엔티티의 CRUD,
+  명시적 비즈니스 이벤트 포함)을 추가 전용으로 캡처하는 테이블.
+  [감사 로그](../admin-guide/audit-log.md) 참고.
+- **Workspace.** 스캔당 체크아웃 디렉터리 — 호스트는
+  `/opt/trustedoss/workspace`, 컨테이너는 `/workspace`. 디스크 압박
+  서브시스템이 정리합니다(30일 이상 미사용).
+
+## 함께 보기
+
+- [아키텍처](./architecture.md) — 구성 요소가 어떻게 맞물리는지
+- [API 개요](./api-overview.md) — REST + WebSocket 표면
+- [환경 변수](./env-variables.md) — 모든 설정 항목

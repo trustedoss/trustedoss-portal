@@ -197,7 +197,7 @@ PR 코멘트는 그대로 게시되며 체크는 green으로 유지됩니다.
 
 ## PR 코멘트는 어떻게 게시되나
 
-PR 코멘트는 워크플로가 아니라 **포털이 서버 측에서** 게시합니다. 액션이 SCA 결과를 업로드한 뒤, 포털이 정책 게이트를 평가하고 코멘트 게시가 활성화되어 있다면 포털 환경에 저장된 GitHub PAT(`GITHUB_TOKEN` 또는 `TRUSTEDOSS_GITHUB_TOKEN`)를 사용해 `https://api.github.com`을 직접 호출합니다. 워크플로는 절대로 `secrets.GITHUB_TOKEN`을 포털로 전달하지 않습니다. 포털에 저장된 installation 토큰을 가진 정식 GitHub App은 로드맵에 있습니다.
+PR 코멘트는 워크플로가 아니라 **포털이 서버 측에서** 게시합니다. 액션이 SCA 결과를 업로드한 뒤, 포털이 빌드 게이트를 평가하고 코멘트 게시가 활성화되어 있다면 포털 환경에 저장된 GitHub PAT(`GITHUB_TOKEN` 또는 `TRUSTEDOSS_GITHUB_TOKEN`)를 사용해 `https://api.github.com`을 직접 호출합니다. 워크플로는 절대로 `secrets.GITHUB_TOKEN`을 포털로 전달하지 않습니다. 포털에 저장된 installation 토큰을 가진 정식 GitHub App은 로드맵에 있습니다.
 
 코멘트는 **idempotent**합니다 — 같은 PR에서 워크플로를 재실행하면 기존 코멘트가 제자리에 갱신됩니다. 마커 `<!-- trustedoss-sca -->`로 식별합니다.
 

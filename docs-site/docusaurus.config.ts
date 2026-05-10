@@ -90,6 +90,11 @@ const config: Config = {
           label: "CI",
           position: "left",
         },
+        {
+          to: "/docs/reference/architecture",
+          label: "Reference",
+          position: "left",
+        },
         { type: "localeDropdown", position: "right" },
         {
           href: "https://github.com/trustedoss/trustedoss-portal",
@@ -154,6 +159,23 @@ const config: Config = {
       ],
     },
   } satisfies Preset.ThemeConfig,
+
+  // Offline lunr-style search. Ships an index per locale; KO tokenizer is
+  // bundled. Cmd+K / Ctrl+K opens the search bar by default. No external service.
+  themes: [
+    [
+      "@easyops-cn/docusaurus-search-local",
+      {
+        hashed: true,
+        language: ["en", "ko"],
+        indexBlog: false,
+        indexPages: false,
+        docsRouteBasePath: "/docs",
+        highlightSearchTermsOnTargetPage: true,
+        searchResultLimits: 8,
+      },
+    ],
+  ],
 };
 
 export default config;
