@@ -151,12 +151,33 @@ test.describe("@manual-aligned admin backup", () => {
     await backup.cancelRestore();
   });
 
-  test("4) [fixme] manual backup trigger creates a row (deferred — celery worker)", async ({
+  test("4) [fixme] manual backup trigger creates a row (deferred — backup.sh shape)", async ({
     page,
   }, testInfo) => {
+    // CI on PR #49 surfaced the actual blocker: scripts/backup.sh requires
+    // a `docker-compose` (V1) binary to be available *inside the celery-
+    // worker container* (the script shells back into the compose stack to
+    // call `pg_dump` and `alembic current`). The dev / CI worker images
+    // do NOT install docker-compose, so the backup task fails with
+    // ``BackupTaskError("backup.sh exited 1: docker-compose (V1) is
+    // required.")`` and no manual row is ever written. This is unrelated
+    // to the original "stale image / missing aiosmtplib" hypothesis from
+    // PR #45 — the C bundle worker rebuild (PR #47) does not address it.
+    //
+    // Real fixes are operator-side and out of scope here:
+    //   (a) bake docker-compose into the worker image (heavy + recursive
+    //       Docker dependency);
+    //   (b) refactor backup.sh / tasks.backup so the worker hits the
+    //       database via DATABASE_URL directly (no shell-back into the
+    //       compose stack); or
+    //   (c) drive the test against a `pg_dump` shim that records intent
+    //       without actually shelling out.
+    //
+    // Until then, the toast assertion (`triggerManualBackup`) covers the
+    // happy-path UI; the row-creation post-condition stays fixme.
     test.fixme(
       true,
-      "Celery worker image in the dev stack is stale (aiosmtplib missing per prompt context). The toast assertion runs cleanly but the row check races worker availability — re-enable when worker is refreshed.",
+      "scripts/backup.sh requires docker-compose inside the worker container; the dev/CI worker image does not ship it. See spec comment for the three operator-side resolution paths.",
     );
 
     const seed = tryAcquireSeed(testInfo, {
@@ -171,14 +192,14 @@ test.describe("@manual-aligned admin backup", () => {
 
     const backup = new AdminBackupHarness(page);
     await backup.gotoBackup();
+    const before = await backup.getRowCount();
     await backup.triggerManualBackup();
 
-    // After the worker writes the artifact the list re-fetches; the new
-    // row's name follows `manual-<utc-iso>.tar.gz`.
     await backup.refresh();
-    await expect(
-      page.locator('[data-testid="admin-backup-row"][data-kind="manual"]'),
-    ).toHaveCount(1, { timeout: 30_000 });
+    await backup.waitForManualBackupRow(30_000);
+
+    const after = await backup.getRowCount();
+    expect(after).toBeGreaterThan(before);
   });
 
   test.describe("adversarial — backup name DELETE rejects malformed input", () => {
