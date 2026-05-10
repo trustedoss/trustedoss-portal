@@ -178,16 +178,19 @@ async def test_lock_and_count_active_super_admins_blocks_concurrent_update(
     from services.admin_user_service import _lock_and_count_active_super_admins
 
     async with session_factory() as setup:
-        # Deactivate every existing active super_admin so the locked set is
-        # exactly {target}.
+        # A5 trigger interaction: insert the new target FIRST so the trigger
+        # always sees at least one other active super_admin while we deactivate
+        # the pre-existing rows. Without this, the loop's last UPDATE would
+        # leave count=0 and the trigger from migration 0013 would RAISE.
         from models import User
 
+        target = await make_user(setup, is_superuser=True)
         existing = (
             (
                 await setup.execute(
-                    select(User).where(
-                        User.is_active.is_(True), User.is_superuser.is_(True)
-                    )
+                    select(User)
+                    .where(User.is_active.is_(True), User.is_superuser.is_(True))
+                    .where(User.id != target.id)
                 )
             )
             .scalars()
@@ -196,7 +199,6 @@ async def test_lock_and_count_active_super_admins_blocks_concurrent_update(
         for u in existing:
             u.is_active = False
         await setup.commit()
-        target = await make_user(setup, is_superuser=True)
 
     # Open the lock-holding transaction. We will NOT commit until after the
     # UPDATE attempt, so the lock is held for the duration.
@@ -303,15 +305,23 @@ async def test_concurrent_deactivate_last_super_admin_blocks_at_least_one(
 
     # Setup: two target super_admins (A, B) plus an "operator" super_admin C
     # used as the actor (the service forbids self-deactivate).
+    # A5 trigger interaction: insert A/B/operator FIRST so the bulk
+    # deactivation of any pre-existing super_admins always sees at least
+    # three other active super_admins remaining.
     async with session_factory() as setup_session:
         from models import User
+
+        target_a = await make_user(setup_session, is_superuser=True)
+        target_b = await make_user(setup_session, is_superuser=True)
+        operator = await make_user(setup_session, is_superuser=True)
+        actor = principal_for(operator, role="super_admin")
 
         existing = (
             (
                 await setup_session.execute(
-                    select(User).where(
-                        User.is_active.is_(True), User.is_superuser.is_(True)
-                    )
+                    select(User)
+                    .where(User.is_active.is_(True), User.is_superuser.is_(True))
+                    .where(~User.id.in_([target_a.id, target_b.id, operator.id]))
                 )
             )
             .scalars()
@@ -321,14 +331,10 @@ async def test_concurrent_deactivate_last_super_admin_blocks_at_least_one(
             u.is_active = False
         await setup_session.commit()
 
-        target_a = await make_user(setup_session, is_superuser=True)
-        target_b = await make_user(setup_session, is_superuser=True)
-        operator = await make_user(setup_session, is_superuser=True)
-        actor = principal_for(operator, role="super_admin")
-
         # Deactivate operator so the active-super-admin set is exactly {A, B}.
         # With three rows present neither demote alone would trigger the
-        # ``count <= 1`` guard, defeating the test.
+        # ``count <= 1`` guard, defeating the test. The trigger sees count=2
+        # (A + B) at this point so the deactivation passes.
         operator.is_active = False
         await setup_session.commit()
 
@@ -381,12 +387,22 @@ async def test_concurrent_demote_last_super_admin_blocks_at_least_one(
     async with session_factory() as setup_session:
         from models import User
 
+        # A5 trigger interaction: insert targets + operator FIRST so the
+        # bulk deactivation of pre-existing super_admins keeps count >= 3
+        # at all times.
+        org = await make_organization(setup_session)
+        team = await make_team(setup_session, organization=org)
+        target_a = await make_user(setup_session, is_superuser=True)
+        target_b = await make_user(setup_session, is_superuser=True)
+        operator = await make_user(setup_session, is_superuser=True)
+        actor = principal_for(operator, role="super_admin")
+
         existing = (
             (
                 await setup_session.execute(
-                    select(User).where(
-                        User.is_active.is_(True), User.is_superuser.is_(True)
-                    )
+                    select(User)
+                    .where(User.is_active.is_(True), User.is_superuser.is_(True))
+                    .where(~User.id.in_([target_a.id, target_b.id, operator.id]))
                 )
             )
             .scalars()
@@ -396,13 +412,8 @@ async def test_concurrent_demote_last_super_admin_blocks_at_least_one(
             u.is_active = False
         await setup_session.commit()
 
-        org = await make_organization(setup_session)
-        team = await make_team(setup_session, organization=org)
-        target_a = await make_user(setup_session, is_superuser=True)
-        target_b = await make_user(setup_session, is_superuser=True)
-        operator = await make_user(setup_session, is_superuser=True)
-        actor = principal_for(operator, role="super_admin")
-
+        # Deactivate operator → count drops from 3 to 2 (A + B remain), still
+        # passes the trigger gate.
         operator.is_active = False
         await setup_session.commit()
 

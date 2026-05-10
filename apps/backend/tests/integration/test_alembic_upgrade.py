@@ -69,9 +69,10 @@ def test_alembic_current_reports_head_revision():
     # Phase 8 PR #23 bumped 0009 → 0010 (oauth_identities + oauth_provider ENUM);
     # Chore A2 bumped 0010 → 0011 (notifications + notification_preferences);
     # post-walkthrough A bundle bumped 0011 → 0012 (audit_logs immutability
-    # trigger + TRUNCATE guard).
+    # trigger + TRUNCATE guard); manual sys-bug fix A5 bumped 0012 → 0013
+    # (last super_admin BEFORE UPDATE/DELETE trigger on users).
     # Bump again when a future migration lands.
-    assert "0012" in current.stdout, current.stdout
+    assert "0013" in current.stdout, current.stdout
 
 
 @pytest.mark.integration

@@ -13,6 +13,7 @@ import {
   forceDTHealthCheck,
   getDTStatus,
   listDTOrphans,
+  resetDTBreaker,
 } from "@/features/admin/dt/api/adminDTApi";
 import {
   dtOrphansQueryKey,
@@ -69,6 +70,25 @@ describe("admin DT api glue", () => {
       .mockResolvedValueOnce({ data: { healthy: true } } as never);
     await forceDTHealthCheck();
     expect(spy).toHaveBeenCalledWith("/v1/admin/dt/health-check");
+    spy.mockRestore();
+  });
+
+  it("resetDTBreaker issues POST /v1/admin/dt/breaker/reset (A4)", async () => {
+    const spy = vi
+      .spyOn(api, "post")
+      .mockResolvedValueOnce({
+        data: {
+          state_before: "open",
+          state_after: "closed",
+          fail_count_before: 5,
+          reset_at: "2026-05-10T12:00:00Z",
+        },
+      } as never);
+    const result = await resetDTBreaker();
+    expect(spy).toHaveBeenCalledWith("/v1/admin/dt/breaker/reset");
+    expect(result.state_before).toBe("open");
+    expect(result.state_after).toBe("closed");
+    expect(result.fail_count_before).toBe(5);
     spy.mockRestore();
   });
 
