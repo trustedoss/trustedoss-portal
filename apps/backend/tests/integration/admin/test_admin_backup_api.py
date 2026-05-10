@@ -325,9 +325,13 @@ async def test_delete_missing_backup_returns_404(
 # ---------------------------------------------------------------------------
 
 
-async def test_restore_without_confirm_header_returns_400(
+async def test_restore_without_confirm_header_returns_412(
     client: AsyncClient, temp_backups_root: Path
 ) -> None:
+    """A2 (sys-bug-bkp-1): missing X-Confirm-Restore is a precondition
+    failure (412), not a malformed request (400). The request body itself
+    is valid; what is missing is the operator's explicit confirmation.
+    """
     factory = await _factory(client)
     async with factory() as session:
         admin = await make_user(session, is_superuser=True)
@@ -336,10 +340,12 @@ async def test_restore_without_confirm_header_returns_400(
     response = await client.post(
         "/v1/admin/backup/restore", headers=_bearer_for(admin), files=files
     )
-    assert response.status_code == 400, response.text
+    assert response.status_code == 412, response.text
     assert response.headers["content-type"].startswith(PROBLEM_JSON)
     body = response.json()
-    assert body["type"].endswith("/backup-restore-confirm-required")
+    assert body["type"] == "urn:trustedoss:problem:restore_confirmation_required"
+    assert body["title"] == "Restore confirmation header missing"
+    assert body["status"] == 412
 
 
 async def test_restore_with_confirm_header_enqueues_task(

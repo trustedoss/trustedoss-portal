@@ -256,7 +256,16 @@ async def stream_audit_csv(
 
     # Header — flush a single line so consumers like spreadsheets can detect
     # column structure on the first chunk.
-    yield _csv_line(_CSV_COLUMNS)
+    #
+    # UTF-8 byte-order mark prefix (A3, walkthrough sys-bug-audit-2): Excel
+    # on Korean / Japanese / Chinese locales requires a BOM to detect UTF-8
+    # automatically; without it, double-clicking the CSV opens it under the
+    # locale's legacy code page (CP949 / SJIS / GB18030) and every non-ASCII
+    # actor email or audit row diff renders as mojibake. The BOM is a single
+    # 3-byte (\xef\xbb\xbf) prefix on the first chunk, so the wire size cost
+    # is one-time and tools that already auto-detect UTF-8 (LibreOffice, awk,
+    # python's csv module) silently strip it.
+    yield "\ufeff" + _csv_line(_CSV_COLUMNS)
 
     base = _apply_filters(
         select(AuditLog, User.email).outerjoin(User, User.id == AuditLog.actor_user_id),

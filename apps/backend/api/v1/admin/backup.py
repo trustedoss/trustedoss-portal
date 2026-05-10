@@ -19,7 +19,8 @@ RFC 7807:
   - All 4xx / 5xx responses use ``application/problem+json``.
   - Non-conforming names → 404 with ``type=.../backup-not-found``.
   - Auto backup deletion attempt → 409 with ``type=.../backup-auto-protected``.
-  - Restore without ``X-Confirm-Restore: yes`` → 400.
+  - Restore without ``X-Confirm-Restore: yes`` → 412
+    ``urn:trustedoss:problem:restore_confirmation_required``.
 
 Streaming:
   - Download streams a tar.gz built on the fly via a ``tempfile.NamedTemporaryFile``
@@ -92,7 +93,14 @@ _CHUNK_SIZE = 1024 * 1024  # 1 MiB
 # Canonical RFC 7807 type URIs for this surface.
 _TYPE_NOT_FOUND = "https://docs.trustedoss.io/errors/backup-not-found"
 _TYPE_AUTO_PROTECTED = "https://docs.trustedoss.io/errors/backup-auto-protected"
-_TYPE_CONFIRM_REQUIRED = "https://docs.trustedoss.io/errors/backup-restore-confirm-required"
+# A2 (walkthrough sys-bug-bkp-1): the missing-confirmation response is now
+# 412 Precondition Failed (RFC 9110 §15.5.13 — "the server does not wish to
+# risk making this change permanent" matches the destructive-restore
+# semantic better than 400 Bad Request, which says the request itself was
+# malformed). The URN form follows the convention in users_me /
+# oauth_identity_service for new errors; the legacy https://… URIs in this
+# file stay because their wire forms are publicly documented.
+_TYPE_CONFIRM_REQUIRED = "urn:trustedoss:problem:restore_confirmation_required"
 _TYPE_UPLOAD_TOO_LARGE = "https://docs.trustedoss.io/errors/backup-upload-too-large"
 _TYPE_INVALID_ARCHIVE = "https://docs.trustedoss.io/errors/backup-invalid-archive"
 _TYPE_DECOMPRESSION_BOMB = "https://docs.trustedoss.io/errors/backup-decompression-bomb"
@@ -333,9 +341,14 @@ async def restore_backup_endpoint(
     actor: CurrentUser = Depends(require_super_admin_or_404()),
 ) -> Response:
     if confirm != "yes":
+        # A2 (walkthrough sys-bug-bkp-1): 400 → 412. The request shape is
+        # well-formed; what is missing is a precondition (the explicit
+        # destructive-restore confirmation header). 412 Precondition Failed
+        # is the RFC 9110 §15.5.13 fit and lets clients dispatch on status
+        # code alone without parsing the problem URI.
         return problem_response(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            title="Restore Confirmation Required",
+            status_code=status.HTTP_412_PRECONDITION_FAILED,
+            title="Restore confirmation header missing",
             detail=(
                 "Restore is destructive. Re-send the request with the "
                 "header X-Confirm-Restore: yes."
