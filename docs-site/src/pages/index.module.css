@@ -49,6 +49,21 @@
   margin-bottom: 3rem;
 }
 
+/* Outline button on dark hero — secondary color (#0f172a) is invisible
+   against the navy gradient, so override fg/border to a light tone. */
+.heroCtas :global(.button--outline.button--secondary) {
+  border-color: rgba(248, 250, 252, 0.6);
+  color: #f8fafc;
+  background: transparent;
+}
+
+.heroCtas :global(.button--outline.button--secondary:hover),
+.heroCtas :global(.button--outline.button--secondary:focus-visible) {
+  border-color: #f8fafc;
+  color: #0f172a;
+  background: #f8fafc;
+}
+
 .heroStats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
