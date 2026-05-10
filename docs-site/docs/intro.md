@@ -33,10 +33,10 @@ Full details in the [v2.0.0 release notes](./release-notes/v2.0.0.md).
 
 | Capability | Detail |
 |---|---|
-| Component detection | `cdxgen` discovers packages across 30+ ecosystems (npm, Maven, PyPI, Go, Cargo, NuGet, Composer, RubyGems, Gradle, Hex, …). |
-| License classification | ORT rules tag every license as **Allowed**, **Conditional**, or **Forbidden**. Forbidden licenses block the build. |
-| Vulnerability detection | Dependency-Track correlates components against NVD, OSV, and the GitHub Advisory Database. |
-| Container scanning | Trivy detects OS-package CVEs in container images. |
+| Component detection | `cdxgen` (CycloneDX generator) discovers packages across 30+ ecosystems (npm, Maven, PyPI, Go, Cargo, NuGet, Composer, RubyGems, Gradle, Hex, …). |
+| License classification | OSS Review Toolkit (ORT) rules tag every license as **Allowed**, **Conditional**, or **Forbidden**. Forbidden licenses block the build. |
+| Vulnerability detection | Dependency-Track (DT) correlates components against NVD, OSV, and the GitHub Advisory Database. |
+| Container scanning | Trivy (Aqua Security container scanner) detects OS-package CVEs (Common Vulnerabilities and Exposures) in container images. |
 | SBOM export | CycloneDX (JSON / XML) and SPDX (JSON / Tag-Value), byte-stable for diffing. |
 | Obligations & NOTICE | Per-license obligations are tracked, and a `NOTICE` file is generated automatically from the latest scan. |
 | CI/CD integration | REST API + API key auth, GitHub & GitLab webhooks, GitHub Action, GitLab CI template, Jenkinsfile. The build gate exits 1 on Critical CVE or forbidden license. |

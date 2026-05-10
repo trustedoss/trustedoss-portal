@@ -47,7 +47,7 @@ const sidebars: SidebarsConfig = {
     {
       type: "category",
       label: "Admin guide",
-      collapsed: true,
+      collapsed: false,
       items: [
         "admin-guide/users-and-teams",
         "admin-guide/dt-connector",
@@ -75,6 +75,7 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         "reference/architecture",
+        "reference/glossary",
         "reference/env-variables",
         "reference/api-overview",
       ],

@@ -33,14 +33,14 @@ SCA 포털 도입을 검토하는 엔지니어·플랫폼 담당자·법무 및 
 
 | 기능 | 설명 |
 |---|---|
-| 컴포넌트 탐지 | `cdxgen`으로 30개 이상의 생태계(npm, Maven, PyPI, Go, Cargo, NuGet, Composer, RubyGems, Gradle, Hex 등)에서 패키지를 식별합니다. |
-| 라이선스 분류 | ORT 룰셋이 모든 라이선스를 **허용 / 조건부 / 금지**로 분류합니다. 금지 라이선스는 빌드를 차단합니다. |
-| 취약점 탐지 | Dependency-Track이 NVD, OSV, GitHub Advisory와 컴포넌트를 대조합니다. |
-| 컨테이너 스캔 | Trivy로 컨테이너 이미지의 OS 패키지 CVE를 탐지합니다. |
+| 컴포넌트 탐지 | `cdxgen`(CycloneDX generator)으로 30개 이상의 생태계(npm, Maven, PyPI, Go, Cargo, NuGet, Composer, RubyGems, Gradle, Hex 등)에서 패키지를 식별합니다. |
+| 라이선스 분류 | OSS Review Toolkit(ORT) 룰셋이 모든 라이선스를 **허용 / 조건부 / 금지**로 분류합니다. 금지 라이선스는 빌드를 차단합니다. |
+| 취약점 탐지 | Dependency-Track(DT)이 NVD, OSV, GitHub Advisory와 컴포넌트를 대조합니다. |
+| 컨테이너 스캔 | Trivy(Aqua Security 컨테이너 스캐너)로 컨테이너 이미지의 OS 패키지 CVE(Common Vulnerabilities and Exposures)를 탐지합니다. |
 | SBOM 내보내기 | CycloneDX(JSON·XML)와 SPDX(JSON·Tag-Value). diff 가능한 byte-stable 출력. |
 | 의무사항 및 NOTICE | 라이선스별 의무사항을 추적하고 최신 스캔 기준 `NOTICE` 파일을 자동 생성합니다. |
-| CI/CD 통합 | REST API + API Key 인증, GitHub·GitLab Webhook, GitHub Action, GitLab CI 템플릿, Jenkinsfile. Critical CVE 또는 금지 라이선스 발견 시 빌드 차단 게이트가 종료 코드 1을 반환합니다. |
-| 알림 | 이메일(SMTP), Slack, Microsoft Teams Webhook으로 여섯 가지 트리거 종류 — 스캔 완료 / 스캔 실패 / CVE 탐지 / 라이선스 위반 / 승인 대기 / 정책 게이트 실패. (대부분의 종류에 대한 producer 측 emit 포인트는 v2.1에 도착합니다. 인박스 UI는 현재 동작합니다.) |
+| CI/CD 통합 | REST API + API Key 인증, GitHub·GitLab Webhook, GitHub Action, GitLab CI 템플릿, Jenkinsfile. Critical CVE 또는 금지 라이선스 발견 시 빌드 게이트가 종료 코드 1을 반환합니다. |
+| 알림 | 이메일(SMTP), Slack, Microsoft Teams Webhook으로 여섯 가지 트리거 종류 — 스캔 완료 / 스캔 실패 / CVE 탐지 / 라이선스 위반 / 승인 대기 / 빌드 게이트 실패. (대부분의 종류에 대한 producer 측 emit 포인트는 v2.1에 도착합니다. 인박스 UI는 현재 동작합니다.) |
 | 감사 로그 | 모든 쓰기 작업의 추가 전용 기록 — 행위자·동작·대상·요청 ID. |
 | 다국어 | 영어·한국어 동시 출시. UI, 오류 메시지, 본 문서 모두 이중 언어로 제공됩니다. |
 

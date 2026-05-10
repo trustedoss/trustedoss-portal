@@ -8,7 +8,7 @@ sidebar_position: 2
 
 # 스캔
 
-**스캔**은 프로젝트의 컴포넌트·라이선스·취약점을 탐지하는 end-to-end 실행입니다. 스캔은 Celery 워커에서 실행되며(API 인라인 절대 금지), 일반적으로 5분(작은 npm 프로젝트)에서 60분(큰 멀티 모듈 Java 레포)까지 소요됩니다.
+**스캔**은 프로젝트의 컴포넌트·라이선스·취약점을 탐지하는 end-to-end 실행입니다. 소스 스캔 파이프라인은 `cdxgen`(CycloneDX generator), OSS Review Toolkit(ORT), Dependency-Track(DT)을 체이닝하며, 컨테이너 스캔 파이프라인은 Trivy(Aqua Security 컨테이너 스캐너)를 사용해 CVE(Common Vulnerabilities and Exposures)와 라이선스 이슈를 탐지합니다. 스캔은 Celery 워커에서 실행되며(API 인라인 절대 금지), 일반적으로 5분(작은 npm 프로젝트)에서 60분(큰 멀티 모듈 Java 레포)까지 소요됩니다.
 
 :::note 대상 독자
 프로젝트 소속 팀의 `developer` 이상 권한 보유 엔지니어. 사설 저장소 스캔은 프로젝트의 `git_url`에 자격증명을 포함해야 합니다 — [프로젝트 → 사설 저장소](./projects.md#사설-저장소).

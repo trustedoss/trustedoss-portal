@@ -18,8 +18,8 @@ Engineers with `developer` or higher on the project's team. Triggering scans aga
 
 | Kind | Pipeline | What it detects |
 |---|---|---|
-| **`source`** | `cdxgen` → ORT → Dependency-Track | Components and their declared / detected / concluded licenses, plus CVEs from NVD / OSV / GitHub Advisory. |
-| **`container`** | Trivy | OS-package vulnerabilities and (limited) language-package CVEs in a container image. |
+| **`source`** | `cdxgen` (CycloneDX generator) → OSS Review Toolkit (ORT) → Dependency-Track (DT) | Components and their declared / detected / concluded licenses, plus CVEs (Common Vulnerabilities and Exposures) from NVD / OSV / GitHub Advisory. |
+| **`container`** | Trivy (Aqua Security container scanner) | OS-package vulnerabilities and (limited) language-package CVEs in a container image. |
 
 `source` is the only kind exposed in the v2.0.0 UI trigger — the API also accepts `container` for clients that wire it up directly. See [Roadmap](#roadmap-v2x) for UI parity.
 
