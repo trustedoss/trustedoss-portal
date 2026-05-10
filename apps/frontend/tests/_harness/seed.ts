@@ -69,6 +69,23 @@ export interface SeedSummary {
     provider: "github" | "google";
     provider_user_id: string;
   } | null;
+  /**
+   * Marathon bundle 2 (D1). When ``SeedOptions.noPassword`` is true the
+   * seed stores an empty ``hashed_password`` and password login is
+   * impossible. To let the e2e authenticate as the OAuth-only user
+   * without driving a real IdP callback, the seed mints + persists a
+   * refresh token and exposes it here. The spec sets this as the
+   * ``refresh_token`` HttpOnly cookie via
+   * ``page.context().addCookies(...)`` and the SPA bootstrap then
+   * trades it for an access token via ``POST /v1/auth/refresh``.
+   */
+  refresh_token?: {
+    token: string;
+    cookie_name: string;
+    expires_at: string;
+  } | null;
+  /** True when ``SeedOptions.noPassword`` was honored. */
+  no_password?: boolean;
 }
 
 export interface SeedOptions {
@@ -142,6 +159,19 @@ export interface SeedOptions {
    * identity is a secondary auth method.
    */
   withOAuthIdentity?: "github" | "google";
+  /**
+   * Marathon bundle 2 (D1). Provision an OAuth-only user — empty
+   * ``hashed_password``, requires ``withOAuthIdentity``. The seed mints +
+   * persists a refresh token whose value comes back in
+   * ``SeedSummary.refresh_token`` so the spec can authenticate via the
+   * refresh-cookie path (the only viable entry for an OAuth-only user
+   * without driving a real IdP callback).
+   *
+   * Schema-level guard: passing ``noPassword: true`` without
+   * ``withOAuthIdentity`` results in the script exiting with code 2
+   * (validation failure) and the helper throws a descriptive Error.
+   */
+  noPassword?: boolean;
 }
 
 /**
@@ -203,6 +233,9 @@ export function seedE2eUser(opts: SeedOptions): SeedSummary {
   }
   if (opts.withOAuthIdentity) {
     args.push("--with-oauth-identity", opts.withOAuthIdentity);
+  }
+  if (opts.noPassword) {
+    args.push("--no-password");
   }
 
   // Default DATABASE_URL points at the host-mapped Postgres exposed by

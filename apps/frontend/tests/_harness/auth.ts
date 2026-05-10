@@ -234,6 +234,58 @@ export class AuthHarness {
     });
   }
 
+  /**
+   * Marathon bundle 2 (D1) — log in via a pre-minted refresh token cookie.
+   *
+   * The OAuth-only seed user (``noPassword: true``) cannot use the SPA
+   * password form. The seed mints + persists a refresh token; this method
+   * drops it onto the browser context as the HttpOnly ``refresh_token``
+   * cookie and visits the SPA root, where ``authStore.bootstrap()`` calls
+   * ``POST /auth/refresh`` to trade the refresh JWT for an access token
+   * and a fresh ``/auth/me`` response — leaving the spec at ``/projects``
+   * with the user authenticated, exactly as if a password login had run.
+   *
+   * The cookie path MUST match the backend's ``REFRESH_COOKIE_PATH``
+   * (``/auth`` — see ``apps/backend/api/v1/auth.py``). After the first
+   * bootstrap rotates the refresh token, the backend writes the rotated
+   * cookie back at path ``/auth``. If our pre-set cookie lived at path
+   * ``/`` the browser would store TWO ``refresh_token`` entries (path
+   * ``/`` and path ``/auth``); the next request to ``/auth/refresh`` would
+   * send both, the server would pick the older (now-revoked) jti, the
+   * chain would trip refresh-reuse detection, the user's tokens would all
+   * be revoked, and the next ``page.goto('/profile')`` would land on
+   * ``/login`` (this is the failure mode CI #65 caught).
+   *
+   * Other attributes mirror what the backend would set: ``HttpOnly``,
+   * ``Secure: false`` (Playwright's HTTP origin), ``SameSite=Lax``.
+   */
+  async loginViaRefreshCookie(refreshToken: string): Promise<void> {
+    const url = new URL(this.baseUrl);
+    await this.page.context().addCookies([
+      {
+        name: "refresh_token",
+        value: refreshToken,
+        domain: url.hostname,
+        // MUST match REFRESH_COOKIE_PATH on the backend ("/auth") so the
+        // rotated cookie overwrites the same slot. See docstring above.
+        path: "/auth",
+        httpOnly: true,
+        secure: false,
+        sameSite: "Lax",
+      },
+    ]);
+    // Navigate to the app root; the AppShell mounts AppProviders →
+    // authStore.bootstrap() → /auth/refresh fires and redirects to
+    // /projects when authenticated.
+    await Promise.all([
+      this.page.waitForURL(`${this.baseUrl}/projects`, {
+        timeout: DEFAULT_TIMEOUT_MS,
+      }),
+      this.page.goto(`${this.baseUrl}/`),
+    ]);
+    await this.expectLoggedIn();
+  }
+
   /** Forcibly inject an access token into the in-memory zustand store. */
   async setAccessTokenInStore(token: string | null): Promise<void> {
     await this.page.evaluate((nextToken) => {

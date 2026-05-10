@@ -315,6 +315,24 @@ def _parse_args() -> argparse.Namespace:
             "secondary auth method."
         ),
     )
+    # ── Marathon bundle 2 (D1) — OAuth-only user fixture ───────────────────
+    parser.add_argument(
+        "--no-password",
+        action="store_true",
+        default=False,
+        help=(
+            "Marathon bundle 2 (D1). Provision an OAuth-only user — "
+            "``hashed_password`` is set to an empty string so password login "
+            "always fails (bcrypt verify of '' against '' is rejected by "
+            "passlib). Requires ``--with-oauth-identity`` so the user has at "
+            "least one auth method; refused with ValueError otherwise. When "
+            "set, the seed also mints + persists a refresh token and emits "
+            "``refresh_token`` + ``refresh_token_cookie_name`` in the JSON so "
+            "the e2e can ``addCookies`` instead of trying password login. "
+            "Used by ``auth_and_profile.spec.ts`` test 3 (last-only "
+            "blocks-login)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -384,6 +402,7 @@ async def _seed(  # noqa: PLR0915 — a single linear seed routine reads better 
     extra_members: int = 0,
     extra_team_admin: bool = False,
     with_oauth_identity: str | None = None,
+    no_password: bool = False,
 ) -> dict[str, object]:
     """Create the org/team/user/membership/projects[/scans/components]."""
     # M2 — defense-in-depth: re-check APP_ENV inside _seed so the guard
@@ -392,6 +411,15 @@ async def _seed(  # noqa: PLR0915 — a single linear seed routine reads better 
     # catches accidental direct invocations.
     if super_admin:
         _refuse_super_admin_outside_safe_env()
+    # Marathon bundle 2 (D1) — OAuth-only user must keep at least one auth
+    # method or the user becomes unrecoverable. Refuse before any DB work
+    # so the caller sees a clean ValueError instead of an opaque foreign-key
+    # / NOT-NULL surprise.
+    if no_password and with_oauth_identity is None:
+        raise ValueError(
+            "--no-password requires --with-oauth-identity so the seeded "
+            "user has at least one authentication method."
+        )
     from sqlalchemy.ext.asyncio import (
         AsyncSession,
         async_sessionmaker,
@@ -399,7 +427,11 @@ async def _seed(  # noqa: PLR0915 — a single linear seed routine reads better 
     )
 
     from core.config import database_url
-    from core.security import hash_password
+    from core.security import (
+        create_refresh_token,
+        hash_password,
+        hash_refresh_token,
+    )
     from models import (
         Component,
         ComponentVersion,
@@ -410,6 +442,7 @@ async def _seed(  # noqa: PLR0915 — a single linear seed routine reads better 
         Obligation,
         Organization,
         Project,
+        RefreshToken,
         Scan,
         ScanComponent,
         Team,
@@ -418,7 +451,12 @@ async def _seed(  # noqa: PLR0915 — a single linear seed routine reads better 
         VulnerabilityFinding,
     )
 
-    chosen_password = password or f"Sup3rSecret!{uuid.uuid4().hex[:12]}"
+    # When --no-password is set the password field is irrelevant — `chosen_password`
+    # stays empty so the JSON output reflects "no password set" honestly.
+    if no_password:
+        chosen_password = ""
+    else:
+        chosen_password = password or f"Sup3rSecret!{uuid.uuid4().hex[:12]}"
     chosen_email = email or f"e2e-{uuid.uuid4().hex[:12]}@example.com"
 
     # --component-count implies --with-scan; we cannot attach components
@@ -448,9 +486,16 @@ async def _seed(  # noqa: PLR0915 — a single linear seed routine reads better 
             await session.commit()
             await session.refresh(team)
 
+            # When --no-password is requested we store an empty string. The
+            # User model's column is NOT NULL, but the auth flow's
+            # ``has_password = bool(user.hashed_password)`` check (in
+            # services/oauth_identity_service.py) treats "" as "no password",
+            # which is exactly what the OAuth-only fixture needs to trip
+            # OAuthUnlinkBlocksLoginError on the last identity.
+            hashed_pw = "" if no_password else hash_password(chosen_password)
             user = User(
                 email=chosen_email.strip().lower(),
-                hashed_password=hash_password(chosen_password),
+                hashed_password=hashed_pw,
                 full_name="E2E Seed User",
                 is_active=True,
                 is_superuser=super_admin,
@@ -528,6 +573,32 @@ async def _seed(  # noqa: PLR0915 — a single linear seed routine reads better 
                     "id": str(oauth_row.id),
                     "provider": with_oauth_identity,
                     "provider_user_id": oauth_row.provider_user_id,
+                }
+
+            # Marathon bundle 2 (D1) — mint a refresh token + persist its row
+            # when --no-password is set, so the e2e can authenticate via the
+            # refresh-cookie path (the only viable entry for an OAuth-only
+            # user without driving a real IdP callback). The /auth/refresh
+            # endpoint reads this cookie, looks up the row by jti, and issues
+            # an access token.
+            refresh_token_summary: dict[str, str] | None = None
+            if no_password:
+                token_str, jti, expires_at = create_refresh_token(
+                    subject=str(user.id)
+                )
+                token_row = RefreshToken(
+                    user_id=user.id,
+                    jti=jti,
+                    token_hash=hash_refresh_token(token_str),
+                    parent_jti=None,
+                    expires_at=expires_at,
+                )
+                session.add(token_row)
+                await session.commit()
+                refresh_token_summary = {
+                    "token": token_str,
+                    "cookie_name": "refresh_token",
+                    "expires_at": expires_at.isoformat(),
                 }
 
             project_ids: list[str] = []
@@ -766,6 +837,7 @@ async def _seed(  # noqa: PLR0915 — a single linear seed routine reads better 
             return {
                 "email": user.email,
                 "password": chosen_password,
+                "no_password": bool(no_password),
                 "user_id": str(user.id),
                 "is_super_admin": bool(super_admin),
                 "team_id": str(team.id),
@@ -777,6 +849,7 @@ async def _seed(  # noqa: PLR0915 — a single linear seed routine reads better 
                 "obligation_count": seeded_obligations_count,
                 "extra_members": extra_members_summary,
                 "oauth_identity": oauth_identity_summary,
+                "refresh_token": refresh_token_summary,
             }
     finally:
         await engine.dispose()
@@ -847,8 +920,15 @@ def main() -> int:
                 extra_members=args.extra_members,
                 extra_team_admin=args.extra_team_admin,
                 with_oauth_identity=args.with_oauth_identity,
+                no_password=args.no_password,
             )
         )
+    except ValueError as exc:
+        # Validation errors (e.g. --no-password without --with-oauth-identity)
+        # land here. Distinct exit code so callers can branch on the failure
+        # mode without parsing stderr.
+        print(f"seed precondition failed: {exc}", file=sys.stderr)
+        return 2
     except Exception as exc:  # noqa: BLE001 — top-level CLI handler
         print(f"seed failed: {exc}", file=sys.stderr)
         return 1
