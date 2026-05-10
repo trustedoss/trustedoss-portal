@@ -17,6 +17,7 @@ vi.mock("@/features/admin/dt/api/adminDTApi", async () => {
     listDTOrphans: vi.fn(),
     cleanupDTOrphans: vi.fn(),
     forceDTHealthCheck: vi.fn(),
+    resetDTBreaker: vi.fn(),
   };
 });
 
@@ -25,6 +26,8 @@ import {
   forceDTHealthCheck,
   getDTStatus,
   listDTOrphans,
+  resetDTBreaker,
+  type BreakerResetOut,
   type DTOrphanListPage,
   type DTStatus,
   type HealthProbeOut,
@@ -35,6 +38,7 @@ const mockedStatus = vi.mocked(getDTStatus);
 const mockedOrphans = vi.mocked(listDTOrphans);
 const mockedCleanup = vi.mocked(cleanupDTOrphans);
 const mockedProbe = vi.mocked(forceDTHealthCheck);
+const mockedReset = vi.mocked(resetDTBreaker);
 
 function statusFixture(overrides: Partial<DTStatus> = {}): DTStatus {
   return {
@@ -82,6 +86,16 @@ function cleanupFixture(): OrphanCleanupEnqueued {
   };
 }
 
+function resetFixture(overrides: Partial<BreakerResetOut> = {}): BreakerResetOut {
+  return {
+    state_before: "open",
+    state_after: "closed",
+    fail_count_before: 5,
+    reset_at: "2026-05-10T00:00:00Z",
+    ...overrides,
+  };
+}
+
 function renderPage() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -99,6 +113,7 @@ describe("AdminDTPage", () => {
     mockedOrphans.mockReset();
     mockedCleanup.mockReset();
     mockedProbe.mockReset();
+    mockedReset.mockReset();
   });
 
   it("renders the status card and orphan list once both queries resolve", async () => {
@@ -205,6 +220,98 @@ describe("AdminDTPage", () => {
     await waitFor(() => {
       const toast = screen.getByTestId("admin-toast");
       expect(toast).toHaveAttribute("data-toast-key", "cleanup_enqueued");
+    });
+  });
+
+  it("A4: reset breaker is disabled while state=closed", async () => {
+    mockedStatus.mockResolvedValue(statusFixture({ state: "closed" }));
+    mockedOrphans.mockResolvedValue(orphansFixture(0));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-dt-reset-breaker")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("admin-dt-reset-breaker")).toBeDisabled();
+  });
+
+  it("A4: reset breaker enables on OPEN, confirm strip → reset mutation + toast", async () => {
+    mockedStatus.mockResolvedValue(statusFixture({ state: "open", fail_count: 5 }));
+    mockedOrphans.mockResolvedValue(orphansFixture(0));
+    mockedReset.mockResolvedValue(resetFixture());
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-dt-reset-breaker")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("admin-dt-reset-breaker")).not.toBeDisabled();
+
+    await userEvent.click(screen.getByTestId("admin-dt-reset-breaker"));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("admin-dt-reset-confirm-strip"),
+      ).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByTestId("admin-dt-reset-confirm-ok"));
+    await waitFor(() => {
+      expect(mockedReset).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      const toast = screen.getByTestId("admin-toast");
+      expect(toast).toHaveAttribute("data-tone", "success");
+      expect(toast).toHaveAttribute("data-toast-key", "breaker_reset");
+    });
+  });
+
+  it("A4: reset confirm cancel dismisses the strip without firing the mutation", async () => {
+    mockedStatus.mockResolvedValue(statusFixture({ state: "half_open" }));
+    mockedOrphans.mockResolvedValue(orphansFixture(0));
+    mockedReset.mockResolvedValue(resetFixture());
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-dt-reset-breaker")).not.toBeDisabled();
+    });
+    await userEvent.click(screen.getByTestId("admin-dt-reset-breaker"));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("admin-dt-reset-confirm-strip"),
+      ).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByTestId("admin-dt-reset-confirm-cancel"));
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("admin-dt-reset-confirm-strip"),
+      ).not.toBeInTheDocument();
+    });
+    expect(mockedReset).not.toHaveBeenCalled();
+  });
+
+  it("A4: reset error surfaces a toast with the dt_breaker_already_closed extension", async () => {
+    mockedStatus.mockResolvedValue(statusFixture({ state: "open" }));
+    mockedOrphans.mockResolvedValue(orphansFixture(0));
+    const { ProblemError } = await import("@/lib/problem");
+    mockedReset.mockRejectedValue(
+      new ProblemError("Breaker Already Closed", {
+        status: 409,
+        title: "Breaker Already Closed",
+        detail: "DT breaker is already CLOSED",
+        problem: {
+          type: "https://docs.trustedoss.io/errors/dt-breaker-already-closed",
+          title: "Breaker Already Closed",
+          status: 409,
+          detail: "DT breaker is already CLOSED",
+          dt_breaker_already_closed: true,
+        },
+      }),
+    );
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-dt-reset-breaker")).not.toBeDisabled();
+    });
+    await userEvent.click(screen.getByTestId("admin-dt-reset-breaker"));
+    await userEvent.click(screen.getByTestId("admin-dt-reset-confirm-ok"));
+    await waitFor(() => {
+      const toast = screen.getByTestId("admin-toast");
+      expect(toast).toHaveAttribute("data-tone", "error");
+      expect(toast).toHaveAttribute("data-toast-key", "dt_breaker_already_closed");
     });
   });
 
