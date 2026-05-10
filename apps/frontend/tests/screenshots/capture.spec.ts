@@ -54,12 +54,38 @@ const SCREENSHOT_DIR = path.join(
 );
 
 /**
+ * Hide dev-only chrome that does not belong in shipped guide assets.
+ *
+ * The dev SPA mounts `<ReactQueryDevtools/>` which renders a floating
+ * bottom-right toggle button. Production builds tree-shake the import
+ * (`import.meta.env.DEV` branch), so the docs reader never sees it — but
+ * captures taken against the dev stack do, and they leak into the asset.
+ *
+ * We inject a stylesheet that hides every TanStack Devtools surface
+ * (button + open panel) by class prefix. Removing the elements outright
+ * would race the Devtools' own re-render cycle; CSS is durable.
+ */
+async function hideDevOnlyChrome(page: Page): Promise<void> {
+  await page.addStyleTag({
+    content: `
+      .tsqd-parent-container,
+      [class*="tsqd-"],
+      [aria-label*="React Query" i] {
+        display: none !important;
+        visibility: hidden !important;
+      }
+    `,
+  });
+}
+
+/**
  * Write a viewport screenshot under `docs-site/static/img/screenshots/`.
  *
  * `fullPage: false` keeps the asset bounded to the 1440×900 viewport that
  * runtime users actually see; the alternative (full-page sewn capture)
  * produces tall narrow PNGs that read like printout artefacts in the
- * docs.
+ * docs. Dev-only chrome is hidden right before the capture so the asset
+ * matches what production users will see.
  */
 async function captureScreenshot(page: Page, slug: string): Promise<void> {
   if (!/^[a-z0-9-]+$/.test(slug)) {
@@ -67,6 +93,7 @@ async function captureScreenshot(page: Page, slug: string): Promise<void> {
       `captureScreenshot: slug "${slug}" must be kebab-case ([a-z0-9-]+)`,
     );
   }
+  await hideDevOnlyChrome(page);
   const out = path.join(SCREENSHOT_DIR, `${slug}.png`);
   await page.screenshot({ path: out, fullPage: false });
 }
@@ -107,15 +134,23 @@ function tryAcquireSeed(
 test.describe.serial("@screenshots admin/backup", () => {
   let seed: SeedSummary | null = null;
 
-  test.beforeAll(async (_unused, testInfo) => {
+  // Playwright requires the first beforeAll argument to be an object-
+  // destructure pattern (even if empty). ESLint's no-empty-pattern would
+  // otherwise reject `({}, testInfo)` — the disable comment threads both.
+  // eslint-disable-next-line no-empty-pattern
+  test.beforeAll(async ({}, testInfo) => {
     seed = tryAcquireSeed(testInfo, {
       projectNames: ["screenshots-admin-backup"],
       superAdmin: true,
       withScan: true,
       componentCount: 50,
-      // Namespaced prefix avoids `uq_components_purl` collisions when other
-      // seed calls (e.g. e2e suites) leave their own `comp-NN` rows behind.
-      componentPrefix: "screenshot-admin-backup",
+      // Namespaced + timestamped prefix avoids `uq_components_purl`
+      // collisions when other seed calls (e.g. e2e suites) leave their
+      // own `comp-NN` rows behind, AND avoids self-collision across
+      // back-to-back capture runs against the same DB. Determinism is
+      // not a goal for the capture pipeline — every run regenerates the
+      // assets from scratch.
+      componentPrefix: `screenshot-admin-backup-${Date.now()}`,
       vulnerabilityCount: 30,
       withObligations: true,
       withOAuthIdentity: "github",

@@ -54,7 +54,9 @@ The script prunes backups older than `BACKUP_RETENTION_DAYS` (default 7) at the 
 
 For operators who prefer the browser, `/admin/backup` exposes the same backup and restore flows without dropping to a shell.
 
-![Admin backup page — list view with mounted table](/img/screenshots/admin-backup-list.png)
+![Admin backup page on a fresh install — toolbar mounted, the list body shows the empty-state card until the first backup row arrives](/img/screenshots/admin-backup-list.png)
+
+The list renders six columns: **NAME**, **KIND**, **CREATED**, **SIZE**, **DB REVISION**, **ACTIONS**. On a fresh install the body shows the inline empty card (*"No backups yet…"*) — populate it via the toolbar (**Run manual backup now** or **Upload and restore…**) or wait for the nightly auto job.
 
 ### Trigger a backup
 

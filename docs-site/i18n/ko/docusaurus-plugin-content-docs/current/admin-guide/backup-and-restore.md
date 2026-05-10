@@ -54,7 +54,9 @@ Backup complete
 
 브라우저를 선호하는 운영자라면 `/admin/backup`이 셸로 떨어지지 않고도 같은 백업·복원 흐름을 노출합니다.
 
-![Admin 백업 페이지 — 표가 마운트된 목록 뷰](/img/screenshots/admin-backup-list.png)
+![갓 설치된 환경의 Admin 백업 페이지 — 툴바는 마운트됐고, 첫 백업이 만들어지기 전까지 표 본문은 empty-state 카드를 표시](/img/screenshots/admin-backup-list.png)
+
+목록 표는 여섯 컬럼을 보여줍니다 — **NAME**, **KIND**, **CREATED**, **SIZE**, **DB REVISION**, **ACTIONS**. 갓 설치된 환경에서는 본문이 인라인 empty 카드(*"No backups yet…"*)로 시작합니다 — 툴바의 **Run manual backup now** 또는 **Upload and restore…** 로 채우거나 야간 자동 잡을 기다립니다.
 
 ### 백업 트리거
 
