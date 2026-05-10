@@ -523,7 +523,13 @@ async def test_admin_audit_export_csv_streams(client: AsyncClient) -> None:
     # caller; we asserted the precise prefix.
     assert response.headers["content-type"].startswith("text/csv")
     assert "attachment" in response.headers.get("content-disposition", "")
-    body = response.text
+    # A3 (sys-bug-audit-2): UTF-8 BOM prefix so Excel on CJK locales
+    # auto-detects the encoding instead of decoding under CP949 / SJIS.
+    raw = response.content
+    assert raw[:3] == b"\xef\xbb\xbf", (
+        f"missing UTF-8 BOM; first 16 bytes = {raw[:16]!r}"
+    )
+    body = raw.decode("utf-8-sig")  # csv lib / utf-8-sig strips the BOM
     # Header line is the CSV column contract.
     assert body.startswith("created_at,actor_user_id,actor_email")
 

@@ -80,7 +80,7 @@ The **Upload + Restore** section accepts a previously downloaded `.tar.gz` archi
 
 ![Admin backup — restore typing-gate](./img/admin-backup-restore.png)
 
-The frontend submits the form with an explicit `X-Confirm-Restore: yes` header alongside the typed confirmation; the backend validates **both** the header and the `super_admin` role before queuing the restore task. Missing or mismatched headers return HTTP 400 (Bad Request) with a `Restore Confirmation Required` problem document. The double-gate is deliberate — restore is destructive and irreversible. Promoting the missing-header response to HTTP 412 (Precondition Failed) for tighter RFC 7807 semantics is on the roadmap.
+The frontend submits the form with an explicit `X-Confirm-Restore: yes` header alongside the typed confirmation; the backend validates **both** the header and the `super_admin` role before queuing the restore task. Missing or mismatched headers return **HTTP 412 (Precondition Failed)** with a problem document carrying `type=urn:trustedoss:problem:restore_confirmation_required` and `title="Restore confirmation header missing"`. The 412 status matches RFC 9110 §15.5.13 — the request shape is well-formed; what is missing is the destructive-restore precondition. The double-gate is deliberate — restore is destructive and irreversible.
 
 Progress streams the same way as a manual backup. A completed restore flips the row to `succeeded` and the live application reflects the restored state immediately (existing JWTs are revoked because the user table itself is replaced).
 
@@ -294,7 +294,6 @@ This trades a 30-second scan-pause window for a guaranteed-consistent workspace 
 The following affordances are referenced in early docs but are **not** shipped at v2.0.0:
 
 - `BACKUP_DAILY_ENABLED=false` env toggle to opt out of the Celery Beat daily schedule (today the schedule is always-on; use the host scheduler in addition, not as a replacement).
-- HTTP 412 (Precondition Failed) for missing / mismatched `X-Confirm-Restore` headers (today the response is HTTP 400 with the same problem document).
 
 ## See also
 

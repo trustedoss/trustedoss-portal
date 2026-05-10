@@ -80,7 +80,7 @@ Backup complete
 
 ![Admin 백업 — 복원 타이핑 게이트](./img/admin-backup-restore.png)
 
-프론트엔드는 입력된 확인과 함께 명시적으로 `X-Confirm-Restore: yes` 헤더를 폼에 실어 제출하며, 백엔드는 복원 태스크를 큐에 넣기 전에 **헤더와 `super_admin` 역할 모두**를 검증합니다. 누락 또는 불일치 헤더는 HTTP 400 (Bad Request) 와 `Restore Confirmation Required` problem document 로 응답합니다. 이중 게이트는 의도된 설계입니다 — 복원은 파괴적이고 되돌릴 수 없습니다. 더 엄밀한 RFC 7807 시멘틱을 위해 누락 헤더 응답을 HTTP 412 (Precondition Failed) 로 승격하는 것은 로드맵 항목입니다.
+프론트엔드는 입력된 확인과 함께 명시적으로 `X-Confirm-Restore: yes` 헤더를 폼에 실어 제출하며, 백엔드는 복원 태스크를 큐에 넣기 전에 **헤더와 `super_admin` 역할 모두**를 검증합니다. 누락 또는 불일치 헤더는 **HTTP 412 (Precondition Failed)** 와 `type=urn:trustedoss:problem:restore_confirmation_required`, `title="Restore confirmation header missing"` 를 가진 problem document 로 응답합니다. 412 는 RFC 9110 §15.5.13 에 부합 — 요청 자체는 well-formed 이며 누락된 것은 파괴적 복원의 사전조건(precondition)입니다. 이중 게이트는 의도된 설계입니다 — 복원은 파괴적이고 되돌릴 수 없습니다.
 
 진행은 수동 백업과 같은 방식으로 스트리밍됩니다. 복원이 완료되면 행이 `succeeded`로 전환되며 라이브 애플리케이션이 즉시 복원된 상태를 반영합니다(사용자 테이블 자체가 교체되므로 기존 JWT는 무효화됩니다).
 
@@ -294,7 +294,6 @@ docker-compose -f docker-compose.yml start worker
 다음 기능들은 초기 문서에 언급되었으나 v2.0.0 에는 **반영되지 않았습니다**.
 
 - `BACKUP_DAILY_ENABLED=false` env 토글로 Celery Beat 일일 스케줄을 옵트아웃(현재는 스케줄이 항상 켜져 있음 — 호스트 스케줄러를 추가로 사용하되 대체로는 사용하지 마세요).
-- 누락 / 불일치 `X-Confirm-Restore` 헤더에 HTTP 412 (Precondition Failed) 응답(현재는 동일 problem document 와 함께 HTTP 400 응답).
 
 ## 함께 보기
 

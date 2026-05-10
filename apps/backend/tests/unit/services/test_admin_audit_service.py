@@ -275,7 +275,12 @@ async def test_stream_audit_csv_yields_header_and_rows(db_session: AsyncSession)
         chunks.append(chunk)
 
     full = "".join(chunks)
-    reader = _csv.reader(io.StringIO(full))
+    # A3 (sys-bug-audit-2): the export prepends a UTF-8 BOM so Excel on
+    # CJK locales auto-detects the encoding. The BOM is a U+FEFF code
+    # point in the in-memory string; csv.reader sees it as the first
+    # character of the first cell, so we strip it here before parsing.
+    assert full.startswith("\ufeff"), f"missing BOM: {full[:8]!r}"
+    reader = _csv.reader(io.StringIO(full.lstrip("\ufeff")))
     rows = list(reader)
     # Header + 3 rows.
     assert len(rows) == 4

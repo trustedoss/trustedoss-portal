@@ -32,7 +32,16 @@ sidebar_position: 4
 | `ip` | inet | 출처 IP. |
 | `user_agent` | text | 잘린 UA 문자열. |
 
-추가 전용 계약은 애플리케이션 레이어에서 강제됩니다 — 감사 리스너는 insert 만 발신하며 API 가 update / delete 엔드포인트를 노출하지 않습니다. 직접 SQL 까지 차단하는 DB 수준 `CHECK` / 트리거는 로드맵 항목입니다(아래 참고). 그 전까지는 의도된, 감사된 유지보수 윈도 외에 `audit_logs`에 UPDATE / DELETE 를 실행하지 마세요.
+추가 전용 계약은 **두 계층에서** 강제됩니다.
+
+1. **애플리케이션** — 감사 리스너는 insert 만 발신하며 API 가 update / delete 엔드포인트를 노출하지 않습니다.
+2. **데이터베이스** — 두 개의 트리거(마이그레이션 `0012`)가 모든 변경 시도에 `SQLSTATE 23000` (integrity_constraint_violation)을 발생시킵니다.
+   - `audit_logs_immutable_trigger` — BEFORE UPDATE OR DELETE, FOR EACH ROW.
+   - `audit_logs_immutable_truncate` — BEFORE TRUNCATE, FOR EACH STATEMENT (PostgreSQL 은 row 트리거를 UPDATE / DELETE 에서만 발사 — TRUNCATE 는 BEFORE-row 를 우회하므로 테이블 wipe 경로에는 별도 statement-level 가드가 필요).
+   
+   super-admin 이 raw `psql`로 `UPDATE audit_logs ...`, `DELETE FROM audit_logs ...`, `TRUNCATE TABLE audit_logs` 를 실행하면 `ERROR: audit_logs is append-only (TG_OP=…)` 와 함께 트랜잭션이 abort 됩니다. INSERT 는 영향받지 않으므로 리스너 경로는 정상 동작합니다.
+
+이 트리거들은 PR #44 가 로드맵으로 문서화했던 defense-in-depth 갭을 닫습니다. **알려진 잔여 우회**: 기본 설치에서는 마이그레이션 role 과 런타임 앱 role 이 동일한 PostgreSQL role (`trustedoss`) 입니다. 이 role 이 함수와 트리거를 소유하므로 `DROP TRIGGER` / `ALTER FUNCTION ... OWNER` 를 통해 "DROP TRIGGER → mutate → re-CREATE TRIGGER" 우회가 가능합니다. Phase 7 / 8 강화 PR 에서 런타임 role 과 마이그레이션 role 분리(`trustedoss_app` 은 `audit_logs` 에 DML 만 + `trustedoss_owner` 는 마이그레이션) 가 예정되어 있으며, 분리 후에는 런타임 앱에서 우회 불가능. 그 전까지 우회는 관측 가능합니다 — `DROP TRIGGER` 는 DDL 문이라 `pg_event_trigger` (향후 audit-of-audit 강화) 와 두-운영자 retention purge 의 운영자 세션 로그가 포착합니다.
 
 ## 무엇이 기록되는가
 
@@ -69,7 +78,7 @@ v2.0.0 의 상단 인라인 필터 바:
 
 ## CSV 내보내기
 
-툴바의 **Export CSV**는 **현재 필터된** 결과 집합을 한 번에 최대 10만 행까지 내보냅니다. CSV 는 UTF-8 입니다(v2.0.0 에서 BOM 미포함 — 한국어 / 일본어 로케일 Excel 사용자는 열 때 UTF-8 을 명시적으로 선택해야 합니다. UTF-8 BOM 발신은 로드맵 항목입니다).
+툴바의 **Export CSV**는 **현재 필터된** 결과 집합을 한 번에 최대 10만 행까지 내보냅니다. CSV 는 UTF-8 이며 선두에 byte-order mark (`EF BB BF`) 가 붙어 있습니다 — 한국어 / 일본어 / 중국어 로케일의 Excel 이 CP949 / SJIS / GB18030 으로 폴백하지 않고 UTF-8 을 자동 인식하므로, 비ASCII actor 이메일이나 감사 행 diff 가 mojibake 로 깨지지 않습니다. 이미 UTF-8 을 자동 인식하는 도구(LibreOffice, awk, Python `csv` / `utf-8-sig` 코덱)는 BOM 을 자동으로 제거합니다.
 
 더 큰 윈도는 API로 페이지네이션:
 
@@ -119,7 +128,30 @@ docker-compose -f docker-compose.yml exec postgres \
   -c "DELETE FROM audit_logs WHERE created_at < '2025-01-01';"
 ```
 
-`DELETE`는 v2.0.0 에서 DB 레이어가 차단하지 않습니다(추가 전용 계약은 애플리케이션에서 강제됩니다 — [스키마](#스키마) 참고). 두 명의 운영자가 함께 있는 의도된 유지보수 윈도에서 실행하고, 운영자 동작 자체를 별도로 기록하세요(삭제 자체는 감사 행을 발신하지 않습니다).
+`DELETE`는 immutability 트리거에 의해 **DB 레이어에서 차단됩니다**([스키마](#스키마) 참고). 의도된 retention purge 시에는 동일 유지보수 트랜잭션 안에서 두 트리거를 drop, `DELETE` 실행, 트리거 재생성을 commit 전에 마쳐야 합니다.
+
+```sql
+BEGIN;
+DROP TRIGGER audit_logs_immutable_truncate ON audit_logs;
+DROP TRIGGER audit_logs_immutable_trigger ON audit_logs;
+DELETE FROM audit_logs WHERE created_at < '2025-01-01';
+CREATE TRIGGER audit_logs_immutable_trigger
+  BEFORE UPDATE OR DELETE ON audit_logs
+  FOR EACH ROW EXECUTE FUNCTION audit_logs_prevent_mutation();
+CREATE TRIGGER audit_logs_immutable_truncate
+  BEFORE TRUNCATE ON audit_logs
+  FOR EACH STATEMENT EXECUTE FUNCTION audit_logs_prevent_mutation();
+COMMIT;
+
+-- 유지보수 윈도 종료 전 두 트리거가 복원됐는지 검증.
+SELECT tgname FROM pg_trigger
+ WHERE tgrelid = 'audit_logs'::regclass AND NOT tgisinternal;
+-- 기대 결과: 정확히 두 행
+--   audit_logs_immutable_trigger
+--   audit_logs_immutable_truncate
+```
+
+운영자 동작 자체는 별도로 기록하세요(트리거 DDL 자체는 감사 행을 발신하지 않습니다). 두 명의 운영자가 함께 있는 상태에서 실행하며, 두 번째 운영자가 위 `pg_trigger` 검증 쿼리를 실행해 두 트리거가 모두 등록됐음을 확인한 뒤 세션을 닫습니다.
 
 ## 정상 동작 확인
 
@@ -159,8 +191,6 @@ SELECT * FROM audit_logs
 
 다음 기능들은 초기 문서에 언급되었으나 v2.0.0 에는 **반영되지 않았습니다**.
 
-- DB 수준 immutability(`audit_logs`의 UPDATE / DELETE 를 차단하는 PostgreSQL 트리거 또는 `CHECK`).
-- CSV 내보내기의 UTF-8 BOM 접두사 — 수동 선택 없이 Excel 이 비ASCII 자동 인식.
 - `/admin/audit`의 다중 선택 필터(Action 다중 선택, Target table 다중 선택), 프리셋 날짜 범위(지난 1시간 / 오늘 / 지난 7일), 정확 일치 Target ID 필터, Request ID 필터.
 - `actor_kind` 컬럼 / 필터(현재는 감사 행의 행위자가 `actor_user_id`로 식별되며 API Key 행위자는 동작 컨텍스트에서 추론).
 

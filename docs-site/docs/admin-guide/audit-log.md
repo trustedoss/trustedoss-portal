@@ -32,7 +32,16 @@ Each entry has:
 | `ip` | inet | Source IP. |
 | `user_agent` | text | Truncated UA string. |
 
-The append-only contract is enforced at the application layer — the audit listener only emits inserts and the API exposes no update / delete endpoints. A DB-level `CHECK` / trigger that would block direct SQL is on the roadmap (see below); until then, do not run UPDATE / DELETE against `audit_logs` outside a deliberate, audited maintenance window.
+The append-only contract is enforced **at two layers**:
+
+1. **Application** — the audit listener only emits inserts and the API exposes no update / delete endpoints.
+2. **Database** — two triggers (migration `0012`) raise `SQLSTATE 23000` (integrity_constraint_violation) on any mutation:
+   - `audit_logs_immutable_trigger` — BEFORE UPDATE OR DELETE, FOR EACH ROW.
+   - `audit_logs_immutable_truncate` — BEFORE TRUNCATE, FOR EACH STATEMENT (PostgreSQL fires row triggers only on UPDATE / DELETE; TRUNCATE bypasses BEFORE-row, so the table-wipe path needs its own statement-level guard).
+   
+   A super-admin running raw `psql` with `UPDATE audit_logs ...`, `DELETE FROM audit_logs ...`, or `TRUNCATE TABLE audit_logs` gets `ERROR: audit_logs is append-only (TG_OP=…)` and the transaction is aborted. INSERT is unaffected — the listener path stays functional.
+
+These triggers close a defense-in-depth gap that PR #44 had documented as roadmap. **Known residual bypass**: in the default install the migration role and the runtime app role are the same PostgreSQL role (`trustedoss`). That role owns the function and the triggers, which means it can `DROP TRIGGER` / `ALTER FUNCTION ... OWNER` and bypass the gate via "DROP TRIGGER → mutate → re-CREATE TRIGGER". A Phase 7 / 8 hardening PR is expected to split the runtime role from the migration role (`trustedoss_app` DML-only on `audit_logs` + `trustedoss_owner` for migrations) at which point the triggers become unbypassable from the runtime app. Until then, the bypass is observable: `DROP TRIGGER` is itself a DDL statement, captured by `pg_event_trigger` (future audit-of-audit hardening) and by the operator's session log for two-operator retention purges.
 
 ## What gets logged
 
@@ -69,7 +78,7 @@ The table is virtualized; 10k entries scroll smoothly.
 
 ## Export to CSV
 
-The **Export CSV** button on the toolbar exports the **currently filtered** result set, up to 100k rows per export. The CSV is UTF-8 (no BOM at v2.0.0 — Excel users on Korean / Japanese locales should pick UTF-8 explicitly when opening; UTF-8 BOM emission is on the roadmap).
+The **Export CSV** button on the toolbar exports the **currently filtered** result set, up to 100k rows per export. The CSV is UTF-8 with a leading byte-order mark (`EF BB BF`) so Excel on Korean / Japanese / Chinese locales auto-detects the encoding instead of falling back to CP949 / SJIS / GB18030 and rendering non-ASCII actor emails or audit row diffs as mojibake. Tools that already auto-detect UTF-8 (LibreOffice, awk, Python's `csv` / `utf-8-sig` codecs) silently strip the BOM.
 
 For larger windows, paginate via the API:
 
@@ -119,7 +128,30 @@ docker-compose -f docker-compose.yml exec postgres \
   -c "DELETE FROM audit_logs WHERE created_at < '2025-01-01';"
 ```
 
-The `DELETE` is not blocked at the DB layer at v2.0.0 (the append-only contract is enforced in the application; see [Schema](#schema)). Run it inside a deliberate maintenance window with two operators present, and capture the operator action separately (the deletion itself does not emit an audit row).
+The `DELETE` is **blocked at the DB layer** by the immutability triggers ([Schema](#schema)). For a deliberate retention purge, drop both triggers inside the same maintenance transaction, run the `DELETE`, and re-create the triggers before commit:
+
+```sql
+BEGIN;
+DROP TRIGGER audit_logs_immutable_truncate ON audit_logs;
+DROP TRIGGER audit_logs_immutable_trigger ON audit_logs;
+DELETE FROM audit_logs WHERE created_at < '2025-01-01';
+CREATE TRIGGER audit_logs_immutable_trigger
+  BEFORE UPDATE OR DELETE ON audit_logs
+  FOR EACH ROW EXECUTE FUNCTION audit_logs_prevent_mutation();
+CREATE TRIGGER audit_logs_immutable_truncate
+  BEFORE TRUNCATE ON audit_logs
+  FOR EACH STATEMENT EXECUTE FUNCTION audit_logs_prevent_mutation();
+COMMIT;
+
+-- Verify both triggers are restored before exiting the maintenance window.
+SELECT tgname FROM pg_trigger
+ WHERE tgrelid = 'audit_logs'::regclass AND NOT tgisinternal;
+-- expect exactly two rows:
+--   audit_logs_immutable_trigger
+--   audit_logs_immutable_truncate
+```
+
+Capture the operator action separately (the trigger DDL itself does not emit an audit row). Run with two operators present; the second operator runs the `pg_trigger` verification query above and confirms both triggers are listed before the session is closed.
 
 ## Verify it worked
 
@@ -159,8 +191,6 @@ This requires a `super_admin` SQL session (no UI).
 
 The following capabilities are referenced in early docs but are **not** shipped at v2.0.0:
 
-- DB-level immutability (PostgreSQL trigger or `CHECK` blocking UPDATE / DELETE on `audit_logs`).
-- UTF-8 BOM prefix on the CSV export so Excel auto-detects non-ASCII without manual selection.
 - Multi-select filters (Action multi-select, Target table multi-select), preset date ranges (last hour / today / last 7 days), exact-match Target ID filter, and Request ID filter on `/admin/audit`.
 - An `actor_kind` column / filter (today the audit row's actor is identified by `actor_user_id`; API-key actors are inferred from the action context).
 
