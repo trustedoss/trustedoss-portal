@@ -106,18 +106,43 @@ test.describe("@manual-aligned profile + connected accounts", () => {
     ).toHaveCount(0);
   });
 
-  // Last-only blocks-login (urn:trustedoss:problem:oauth_unlink_blocks_login)
-  // requires an OAuth-only user (no hashed_password). The seed flow always
-  // provisions a password, so this scenario stays fixme until either the
-  // seed grows a `--no-password` flag or the spec mints a JWT directly for
-  // an OAuth-only fixture user. The blocks-login URN itself is exercised by
-  // the backend unit + integration tests
-  // (apps/backend/tests/integration/test_users_me_oauth_identities_api.py).
-  test("3) [fixme] last-only OAuth Unlink surfaces blocks-login alert", async () => {
-    test.fixme(
-      true,
-      "Requires an OAuth-only user fixture (no hashed_password) so the unlink trips OAuthUnlinkBlocksLoginError. The seed currently always provisions a password; deferred until a `--no-password` flag or a JWT-mint helper lands. The blocks-login URN is exercised by the backend integration suite.",
-    );
+  // Last-only blocks-login (urn:trustedoss:problem:oauth_unlink_blocks_login).
+  // Marathon bundle 2 (D1) unblocked this scenario: the seed now supports
+  // `noPassword: true` which provisions an OAuth-only user (empty
+  // hashed_password) plus a deterministic refresh-token cookie so the
+  // spec authenticates without driving a real IdP callback. Unlinking the
+  // sole identity must trip `OAuthUnlinkBlocksLoginError` and surface the
+  // inline red banner (`profile-unlink-blocks-login`).
+  test("3) last-only OAuth Unlink surfaces blocks-login alert", async ({
+    page,
+  }, testInfo) => {
+    const seed = tryAcquireSeed(testInfo, {
+      projectNames: ["profile-blocks-login"],
+      withOAuthIdentity: "github",
+      noPassword: true,
+    });
+    if (seed === null) return;
+
+    // Sanity — the seed must have honored the OAuth-only request and minted
+    // a refresh token so the spec can authenticate.
+    expect(seed.no_password).toBe(true);
+    expect(seed.refresh_token).not.toBeNull();
+    expect(seed.refresh_token).toBeDefined();
+    expect(seed.password).toBe("");
+
+    const auth = new AuthHarness(page);
+    await auth.loginViaRefreshCookie(seed.refresh_token!.token);
+
+    const profile = new ProfileHarness(page);
+    await profile.gotoProfile();
+    await profile.expectConnectedAccounts(["github"]);
+
+    await profile.unlinkProvider("github");
+    await profile.expectUnlinkBlocked("github");
+
+    // Post-condition: the identity row is still present (no row deletion
+    // happened) and a re-fetch would still report exactly one identity.
+    await profile.expectConnectedAccounts(["github"]);
   });
 
   test("4) Unlink succeeds when password fallback exists", async ({

@@ -234,6 +234,46 @@ export class AuthHarness {
     });
   }
 
+  /**
+   * Marathon bundle 2 (D1) — log in via a pre-minted refresh token cookie.
+   *
+   * The OAuth-only seed user (``noPassword: true``) cannot use the SPA
+   * password form. The seed mints + persists a refresh token; this method
+   * drops it onto the browser context as the HttpOnly ``refresh_token``
+   * cookie and visits the SPA root, where ``authStore.bootstrap()`` calls
+   * ``POST /v1/auth/refresh`` to trade the refresh JWT for an access token
+   * and a fresh ``/auth/me`` response — leaving the spec at ``/projects``
+   * with the user authenticated, exactly as if a password login had run.
+   *
+   * The cookie attributes mirror what the backend would set: ``HttpOnly``,
+   * ``Secure: false`` (Playwright's HTTP origin), ``SameSite=Lax``, path
+   * ``/``. A path mismatch is the most common silent-failure mode.
+   */
+  async loginViaRefreshCookie(refreshToken: string): Promise<void> {
+    const url = new URL(this.baseUrl);
+    await this.page.context().addCookies([
+      {
+        name: "refresh_token",
+        value: refreshToken,
+        domain: url.hostname,
+        path: "/",
+        httpOnly: true,
+        secure: false,
+        sameSite: "Lax",
+      },
+    ]);
+    // Navigate to the app root; the AppShell mounts AppProviders →
+    // authStore.bootstrap() → /auth/refresh fires and redirects to
+    // /projects when authenticated.
+    await Promise.all([
+      this.page.waitForURL(`${this.baseUrl}/projects`, {
+        timeout: DEFAULT_TIMEOUT_MS,
+      }),
+      this.page.goto(`${this.baseUrl}/`),
+    ]);
+    await this.expectLoggedIn();
+  }
+
   /** Forcibly inject an access token into the in-memory zustand store. */
   async setAccessTokenInStore(token: string | null): Promise<void> {
     await this.page.evaluate((nextToken) => {
