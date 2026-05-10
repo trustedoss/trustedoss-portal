@@ -406,7 +406,8 @@ async def restore_backup_endpoint(
     extract_dir = upload_dir / "extracted"
     extract_dir.mkdir(parents=True, exist_ok=True)
     try:
-        with tarfile.open(archive_path, mode="r:gz") as tar:  # nosemgrep
+        # nosemgrep: trailofbits.python.tarfile-extractall-traversal.tarfile-extractall-traversal
+        with tarfile.open(archive_path, mode="r:gz") as tar:
             # Block path-traversal entries (..) and absolute paths, AND
             # enforce decompression-bomb caps (Chore O / H3). The wire cap
             # bounds compressed bytes; without these caps a 10 GB archive
@@ -430,7 +431,7 @@ async def restore_backup_endpoint(
             # Python 3.12+ filter="data" rejects symlinks/devices and members
             # whose resolved path escapes the destination directory. Combined
             # with the preflight loop above, extractall is safe here.
-            tar.extractall(path=str(extract_dir), filter="data")  # noqa: S202  # nosemgrep
+            tar.extractall(path=str(extract_dir), filter="data")  # noqa: S202
     except _DecompressionBombError as exc:
         shutil.rmtree(upload_dir, ignore_errors=True)
         log.warning("admin.backup.upload_decompression_bomb", error=str(exc))

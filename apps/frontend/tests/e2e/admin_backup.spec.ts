@@ -151,35 +151,15 @@ test.describe("@manual-aligned admin backup", () => {
     await backup.cancelRestore();
   });
 
-  test("4) [fixme] manual backup trigger creates a row (deferred — backup.sh shape)", async ({
+  test("4) manual backup trigger creates a row", async ({
     page,
   }, testInfo) => {
-    // CI on PR #49 surfaced the actual blocker: scripts/backup.sh requires
-    // a `docker-compose` (V1) binary to be available *inside the celery-
-    // worker container* (the script shells back into the compose stack to
-    // call `pg_dump` and `alembic current`). The dev / CI worker images
-    // do NOT install docker-compose, so the backup task fails with
-    // ``BackupTaskError("backup.sh exited 1: docker-compose (V1) is
-    // required.")`` and no manual row is ever written. This is unrelated
-    // to the original "stale image / missing aiosmtplib" hypothesis from
-    // PR #45 — the C bundle worker rebuild (PR #47) does not address it.
-    //
-    // Real fixes are operator-side and out of scope here:
-    //   (a) bake docker-compose into the worker image (heavy + recursive
-    //       Docker dependency);
-    //   (b) refactor backup.sh / tasks.backup so the worker hits the
-    //       database via DATABASE_URL directly (no shell-back into the
-    //       compose stack); or
-    //   (c) drive the test against a `pg_dump` shim that records intent
-    //       without actually shelling out.
-    //
-    // Until then, the toast assertion (`triggerManualBackup`) covers the
-    // happy-path UI; the row-creation post-condition stays fixme.
-    test.fixme(
-      true,
-      "scripts/backup.sh requires docker-compose inside the worker container; the dev/CI worker image does not ship it. See spec comment for the three operator-side resolution paths.",
-    );
-
+    // Marathon bundle 3 (D2) refactored ``tasks.backup`` to call
+    // ``pg_dump`` / ``psql`` directly via DATABASE_URL — the old shell-
+    // delegation path that required ``docker-compose`` inside the worker
+    // container is gone. The worker image now ships postgresql-client-17
+    // (apps/backend/Dockerfile.worker) so the manual trigger writes a real
+    // ``manual-YYYYMMDDTHHMMSSZ`` row in ``backups/``.
     const seed = tryAcquireSeed(testInfo, {
       projectNames: ["admin-backup-trigger"],
       superAdmin: true,

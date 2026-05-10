@@ -210,6 +210,30 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
+      # Marathon bundle 3 (D2) — the backup round-trip integration test
+      # (tests/integration/test_backup_task_round_trip.py) runs the real
+      # ``pg_dump`` / ``psql`` binaries against the Postgres 17 service
+      # container. Ubuntu 22.04 ships pg_dump 14, which refuses with
+      # "server version mismatch" against a Postgres 17 server. Add the
+      # PGDG apt repo (fingerprint-pinned, same as the worker / backend
+      # Dockerfiles) and install postgresql-client-17 so pg_dump matches
+      # the server major version. Without this the round-trip test fails
+      # in CI even though it passes locally inside the dev container.
+      - name: Install postgresql-client-17 (matches Postgres service container)
+        if: matrix.target == 'backend'
+        run: |
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /tmp/pgdg.asc
+          gpg --show-keys --with-fingerprint --with-colons /tmp/pgdg.asc \
+            | grep '^fpr:' \
+            | grep -q ':B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8:'
+          sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg /tmp/pgdg.asc
+          rm /tmp/pgdg.asc
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+          pg_dump --version
+
       - name: Run pytest (unit + integration)
         if: matrix.target == 'backend'
         working-directory: apps/backend

@@ -81,6 +81,32 @@ RUN apt-get update \
         gnupg \
     && rm -rf /var/lib/apt/lists/*
 
+# Marathon bundle 3 (D2) — install postgresql-client-17 so the
+# ``trustedoss.backup.run`` Celery task can pg_dump / psql against
+# Postgres directly via DATABASE_URL, without shelling back into the
+# docker-compose stack (which would require docker-compose to be
+# installed inside this worker image — a recursive dependency we do not
+# want). The client major version matches the server Postgres 17 used
+# by docker-compose.dev/prod.yml. Using the official PostgreSQL apt repo
+# (Debian bookworm only ships postgresql-client-15 by default).
+#
+# Supply chain (M4): pin the PostgreSQL Global Development Group key
+# fingerprint so a compromised upstream key URL cannot silently
+# substitute a backdoored binary. The expected fingerprint is published
+# at https://wiki.postgresql.org/wiki/Apt and re-checked at every
+# build. A key rotation requires a deliberate Dockerfile edit + review.
+RUN curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /tmp/pgdg.asc \
+    && gpg --show-keys --with-fingerprint --with-colons /tmp/pgdg.asc \
+        | grep '^fpr:' \
+        | grep -q ':B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8:' \
+    && gpg --dearmor -o /usr/share/keyrings/postgresql.gpg /tmp/pgdg.asc \
+    && rm /tmp/pgdg.asc \
+    && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-17 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY requirements.txt requirements-dev.txt /app/
