@@ -36,6 +36,12 @@ export default defineConfig({
         changeOrigin: true,
       },
       "/ws": {
+        // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
+        // — `ws://` IS the unencrypted scheme, but it is the dev-stack default
+        // (the Vite dev server is the only consumer of this config; production
+        // builds the SPA into static assets and ships them through Traefik
+        // with `wss://`). The same rationale and `nosemgrep` suppression
+        // applies to `apps/frontend/src/lib/wsBase.ts` for the runtime path.
         target: process.env.VITE_PROXY_WS ?? "ws://backend:8000",
         ws: true,
         changeOrigin: true,
