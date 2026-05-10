@@ -47,12 +47,14 @@ x-backend-env: &backend-env
   # Disable slowapi 5/min login limiter when set (e2e CI only). Empty default
   # keeps the limiter enabled in dev / prod. See core/ratelimit.py.
   RATELIMIT_DISABLED: ${RATELIMIT_DISABLED:-}
-  # Phase 6 chore PR #19 — point the backup task at the operator scripts/.
-  # The `./scripts` host dir is mounted at /opt/trustedoss/scripts on backend,
-  # celery-worker, and celery-beat. tasks.backup honours this env override.
-  TRUSTEDOSS_SCRIPTS_DIR: ${TRUSTEDOSS_SCRIPTS_DIR:-/opt/trustedoss/scripts}
-  # Backup output directory mounted from the host. backup.sh writes here
-  # (via BACKUP_DIR), the admin API lists from the same root.
+  # Marathon bundle 3 (D2) — tasks.backup now drives pg_dump / psql
+  # directly via DATABASE_URL using postgresql-client-17 baked into the
+  # backend + worker images. The legacy script-delegation env var
+  # ``TRUSTEDOSS_SCRIPTS_DIR`` is no longer read by Python; the
+  # ``./scripts`` host dir stays mounted (below) only for the host-cron
+  # operator path (``bash scripts/backup.sh`` from outside compose).
+  # Backup output directory mounted from the host. tasks.backup writes
+  # here, the admin API lists from the same root.
   BACKUPS_ROOT: ${BACKUPS_ROOT:-/opt/trustedoss/backups}
 
 services:
@@ -95,10 +97,9 @@ services:
       <<: *backend-env
     volumes:
       - ./apps/backend:/app
-      # Phase 6 chore PR #19 — backup/restore tasks shell out to scripts/.
-      # Mount under /opt/trustedoss to avoid clobbering /app/scripts which
-      # the backend image already ships with (seed_e2e_user.py etc.).
-      # tasks.backup picks this up via TRUSTEDOSS_SCRIPTS_DIR.
+      # Marathon bundle 3 (D2) — backups land under
+      # /opt/trustedoss/backups (BACKUPS_ROOT). The ./scripts mount stays
+      # for the host operator path only; tasks.backup no longer reads it.
       - ./scripts:/opt/trustedoss/scripts:ro
       - ./backups:/opt/trustedoss/backups
     ports:
@@ -124,7 +125,7 @@ services:
       <<: *backend-env
     volumes:
       - ./apps/backend:/app
-      # Phase 6 chore PR #19 — backup/restore tasks shell out to scripts/.
+      # Marathon bundle 3 (D2) — tasks.backup writes via pg_dump directly.
       - ./scripts:/opt/trustedoss/scripts:ro
       - ./backups:/opt/trustedoss/backups
     depends_on:
@@ -158,8 +159,8 @@ services:
       <<: *backend-env
     volumes:
       - ./apps/backend:/app
-      # Phase 6 chore PR #19 — beat imports tasks.backup at startup; the
-      # module reads TRUSTEDOSS_SCRIPTS_DIR to locate backup.sh.
+      # Marathon bundle 3 (D2) — beat imports tasks.backup at startup;
+      # the task drives pg_dump / psql directly, no script delegation.
       - ./scripts:/opt/trustedoss/scripts:ro
       - ./backups:/opt/trustedoss/backups
     depends_on:
