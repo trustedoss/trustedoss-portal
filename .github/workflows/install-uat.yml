@@ -115,13 +115,12 @@ jobs:
           echo "BACKUP_DIR=${BACKUP_DIR%/}" >> "$GITHUB_ENV"
 
       - name: Restore round-trip — restore.sh
-        env:
-          # Required by restore.sh's destructive-op gate. Chore O M5 is
-          # tracked separately to migrate this to an argv flag.
-          BACKUP_RESTORE_CONFIRM: "yes"
         run: |
           set -euo pipefail
-          bash scripts/restore.sh "$BACKUP_DIR"
+          # Marathon bundle 4 (R / M5): destructive-op gate uses the
+          # ``--confirm`` argv flag (Chore O M5 closed). Visible in ps
+          # output and obvious from the call site.
+          bash scripts/restore.sh --confirm "$BACKUP_DIR"
 
       # Re-poll /health post-restore — restore.sh stops backend / frontend
       # / worker / beat, restores the dump, and brings them back. We want

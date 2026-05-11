@@ -136,7 +136,11 @@ async def test_create_notification_truncates_oversized_strings(
     user = await make_user(db_session)
     big_title = "A" * 1000  # exceeds 256
     big_body = "B" * 5000  # exceeds 1024
-    big_link = "C" * 1000  # exceeds 512
+    # Marathon bundle 4 (S / L1): the link validator now requires a
+    # same-origin path. Use a real ``/...`` shape so the truncation
+    # branch is exercised; bare ``"C" * N`` would be rejected as
+    # off-origin and stored as NULL.
+    big_link = "/projects/" + ("c" * 1000)  # exceeds 512 after truncation
     row = await create_notification(
         db_session,
         user_id=user.id,

@@ -60,6 +60,7 @@ from starlette.responses import StreamingResponse
 from core.audit import get_audit_context
 from core.db import get_db
 from core.errors import problem_response
+from core.logging import mask_pii
 from core.security import CurrentUser, require_super_admin_or_404
 from models import AuditLog
 from schemas.backup import (
@@ -205,9 +206,15 @@ async def trigger_backup_endpoint(
     )
     await session.commit()
 
+    # Marathon bundle 4 (T / L3) — log a masked actor email alongside the
+    # actor_id so operators triaging audit-of-audit alerts have a quick
+    # human-identifiable handle (e.g. ``ad***@org.example``) without
+    # joining users on every line. Plain email is intentionally never
+    # logged (PII).
     log.warning(
         "admin.backup.manual_enqueued",
         actor_id=actor_id_str,
+        actor_email=mask_pii(actor.email),
         task_id=async_result.id,
         name=name,
     )
@@ -593,7 +600,13 @@ async def delete_backup_endpoint(
     )
     await session.commit()
 
-    log.warning("admin.backup.deleted", actor_id=str(actor.id), name=name)
+    # Marathon bundle 4 (T / L3) — masked email for traceability.
+    log.warning(
+        "admin.backup.deleted",
+        actor_id=str(actor.id),
+        actor_email=mask_pii(actor.email),
+        name=name,
+    )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

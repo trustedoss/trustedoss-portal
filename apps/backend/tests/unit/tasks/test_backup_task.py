@@ -655,6 +655,45 @@ def test_run_pg_dump_passes_password_via_env_not_argv(
     assert captured["argv"][0] == "pg_dump"
 
 
+def test_allocate_backup_slot_retries_on_collision_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch, temp_backups: Path
+) -> None:
+    """Marathon bundle 4 (R / M4): a slot collision triggers up to 3
+    retries; if the next ``_utc_stamp()`` produces a fresh dir name the
+    backup proceeds normally."""
+    from tasks import backup as task_module
+
+    monkeypatch.setattr(task_module, "_NAME_COLLISION_SLEEP_SECONDS", 0)
+    stamps = iter(["20260510T120000Z", "20260510T120001Z"])
+    monkeypatch.setattr(task_module, "_utc_stamp", lambda **_: next(stamps))
+    (temp_backups / "manual-20260510T120000Z").mkdir()
+
+    name, path = task_module._allocate_backup_slot("manual", None)
+    assert name == "manual-20260510T120001Z"
+    assert path.is_dir()
+
+
+def test_allocate_backup_slot_raises_after_max_retries(
+    monkeypatch: pytest.MonkeyPatch, temp_backups: Path
+) -> None:
+    """Marathon bundle 4 (R / M4): every slot taken → BackupNameCollisionError
+    + audit row with stage=name_collision (no torn backup written)."""
+    from tasks import backup as task_module
+
+    accumulator = _SessionAccumulator()
+    monkeypatch.setattr(task_module, "sync_session_scope", _scope_factory(accumulator))
+    monkeypatch.setattr(task_module, "_NAME_COLLISION_SLEEP_SECONDS", 0)
+    monkeypatch.setattr(task_module, "_utc_stamp", lambda **_: "20260510T120000Z")
+    (temp_backups / "manual-20260510T120000Z").mkdir()
+
+    with pytest.raises(task_module.BackupNameCollisionError):
+        task_module._allocate_backup_slot("manual", None)
+
+    actions = [getattr(o, "action", "") for o in accumulator.all_added]
+    assert actions == ["backup.failed"]
+    assert accumulator.all_added[0].diff["stage"] == "name_collision"
+
+
 def test_run_pg_dump_streams_output_through_gzip(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
