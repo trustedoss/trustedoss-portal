@@ -1,0 +1,187 @@
+---
+id: glossary
+title: Glossary
+description: TrustedOSS Portal domain terms — SCA, SBOM, VEX, license tiers, RBAC roles, and CycloneDX/SPDX mappings.
+sidebar_label: Glossary
+sidebar_position: 4
+---
+
+# Glossary
+
+Single source of truth for the domain terms used across this site.
+Each entry pairs the **full name**, the **abbreviation** (when one is
+used), and the **canonical reference link** to the relevant spec or
+upstream project.
+
+:::note Audience
+Anyone reading the rest of this site. Skim once on first visit;
+keep open in a tab while reading the user, admin, or contributor
+guides.
+:::
+
+## SCA core
+
+- **SCA — Software Composition Analysis.** The discipline of detecting
+  third-party (open-source) components in a software project,
+  classifying their licenses, and identifying their known
+  vulnerabilities. TrustedOSS Portal is an SCA tool.
+- **SBOM — Software Bill of Materials.** A machine-readable inventory
+  of every component (and its version, license, and supplier) that
+  ships with a piece of software. TrustedOSS Portal exports SBOMs in
+  CycloneDX (JSON / XML) and SPDX (JSON / Tag-Value) formats. See
+  [CISA SBOM resources](https://www.cisa.gov/sbom).
+- **CycloneDX.** OWASP-maintained SBOM specification. TrustedOSS uses
+  version 1.6 (JSON + XML). See
+  [cyclonedx.org/specification](https://cyclonedx.org/specification/).
+- **SPDX — Software Package Data Exchange.** Linux Foundation-maintained
+  SBOM specification. TrustedOSS uses version 2.3 (JSON + Tag-Value).
+  See [spdx.dev](https://spdx.dev/).
+
+## Vulnerabilities
+
+- **CVE — Common Vulnerabilities and Exposures.** The
+  industry-standard identifier for a publicly disclosed security flaw,
+  formatted as `CVE-YYYY-NNNN`. Maintained by MITRE.
+  See [cve.org](https://www.cve.org/).
+- **CWE — Common Weakness Enumeration.** A taxonomy of software weakness
+  types (e.g. CWE-79 Cross-site Scripting). Each CVE often references
+  one or more CWE entries.
+- **NVD — National Vulnerability Database.** NIST's analysis layer on
+  top of CVE — adds CVSS scores, CPE matching, references. See
+  [nvd.nist.gov](https://nvd.nist.gov/).
+- **OSV — Open Source Vulnerabilities database.** Google-led, ecosystem-
+  scoped vulnerability database (npm, PyPI, Maven, etc.). See
+  [osv.dev](https://osv.dev/).
+- **GHSA — GitHub Security Advisory.** GitHub's per-ecosystem advisory
+  feed. CVE IDs are often issued via GHSA.
+- **VEX — Vulnerability Exploitability eXchange.** A document format for
+  asserting whether a known vulnerability actually affects a given
+  product. CycloneDX `analysis.state` and SPDX VEX are the two main
+  encodings. TrustedOSS implements the 7-state CycloneDX model:
+  `new`, `analyzing`, `exploitable`, `not_affected`, `false_positive`,
+  `suppressed`, `fixed`. See
+  [CycloneDX VEX](https://cyclonedx.org/capabilities/vex/).
+
+### VEX 7-state — action buttons per state
+
+The vulnerability drawer's Analysis section shows up to seven action
+buttons depending on the current state. The mapping is:
+
+| Current state | Available actions (button labels) |
+|---------------|-----------------------------------|
+| `new` | Move to analyzing, Mark exploitable, Mark not affected, Mark false positive, Suppress, Mark fixed |
+| `analyzing` | Mark exploitable, Mark not affected, Mark false positive, Suppress, Mark fixed |
+| `exploitable` | Mark not affected, Mark false positive, Mark fixed |
+| `not_affected` | Reopen as new, Mark exploitable, Mark fixed |
+| `false_positive` | Reopen as new, Mark exploitable |
+| `suppressed` | Reopen as new |
+| `fixed` | Reopen as new |
+
+Each button writes a `vulnerability_findings.update` row to `audit_logs`
+with the `previous_status` → `new_status` transition in the `diff`
+column.
+
+## Tools
+
+- **ORT — OSS Review Toolkit.** Scanner that walks a project's package
+  ecosystem (Gradle, Maven, npm, pip, Cargo, …), resolves the
+  dependency graph, and emits declared / detected licenses per
+  component. TrustedOSS invokes ORT as the second stage of every
+  source scan. See
+  [oss-review-toolkit.org](https://oss-review-toolkit.org/).
+- **cdxgen — CycloneDX Generator.** Component detector that produces
+  CycloneDX SBOMs from 30+ language / build-system manifests
+  (`package.json`, `pom.xml`, `requirements.txt`, …). Runs as the
+  first scan stage before ORT.
+- **Trivy.** Container and OS-package vulnerability scanner from
+  Aqua Security. TrustedOSS uses Trivy for the container-scan
+  pipeline (separate from the cdxgen + ORT source-scan path).
+- **DT — Dependency-Track.** Vulnerability intelligence platform that
+  mirrors NVD / OSV / GHSA and matches CVEs against your SBOMs.
+  TrustedOSS bundles DT 4.x as an optional Docker Compose overlay and
+  fronts it with a circuit-breaker + cache layer.
+  See [dependencytrack.org](https://dependencytrack.org/).
+
+## License classification
+
+The portal classifies licenses into four **tiers**:
+
+| Tier (code value) | UI label | Build-gate effect |
+|-------------------|----------|-------------------|
+| `forbidden` | Forbidden | Build fails — CI exit code 1 |
+| `conditional` | Conditional | Requires component approval; warning until approved |
+| `permissive` | Allowed | No restriction |
+| `unknown` | Unknown | Surfaced for review; no automatic block |
+
+The classification is driven by the
+`_LICENSE_CATEGORY_DEFAULTS` dict in
+`apps/backend/tasks/scan_source.py` (operator-side override path;
+ORT-driven per-org rules are on the v2.2 roadmap). The values
+`forbidden` / `conditional` / `permissive` / `unknown` appear in API
+responses, audit logs, and policy gate verdicts; the UI labels
+`Forbidden` / `Conditional` / `Allowed` / `Unknown` appear in tables
+and badges. See
+[Components & licenses](../user-guide/components-and-licenses.md#license-classification).
+
+## Build gates
+
+The portal exposes one CI-blocking mechanism, called the **build gate**
+(also referred to as the **policy gate** in some operator-facing
+contexts — they are the same thing). The gate evaluates:
+
+1. Are there any CVEs at or above the project's severity floor (default
+   `Critical`; per-project `policy_gate.severity_floor` is
+   configurable)?
+2. Are there any components in the `forbidden` license tier?
+
+Either condition triggers exit code 1 in the CI integration's
+composite action. A failed gate is recorded in `audit_logs` with the
+list of offending CVEs / licenses.
+
+## RBAC roles
+
+- **`super_admin`** — system-wide. Manages users, teams, DT, scan
+  queue, disk, audit. Created by the install wizard or the
+  `create_super_admin.py` script.
+- **`team_admin`** — bounded to a single team. Manages team settings,
+  team members, and project visibility within the team.
+- **`developer`** — bounded to a team's project set. Runs scans, views
+  results, reviews approvals.
+
+A single user may hold a different role in each team they belong to
+(e.g. `team_admin` in team A and `developer` in team B); the
+Memberships drawer in `/admin/users/<id>` shows all assignments.
+
+## API key scopes
+
+API keys carry a single **scope**:
+
+| Scope | Issued by | Effect |
+|-------|-----------|--------|
+| `org` | super-admin only | Authenticates against any endpoint in the org |
+| `team` | super-admin, team-admin | Bounded to one team's projects |
+| `project` | super-admin, team-admin, developer (within their team's projects) | Bounded to one project |
+
+There is no per-action allowlist at v2.0.0; any caller authenticated
+with a key in the right scope can hit any endpoint that accepts an
+API key. Per-action capabilities are on the roadmap.
+
+## Operational terminology
+
+- **Circuit breaker (CLOSED / OPEN / HALF_OPEN).** A failure-domain
+  isolation pattern. TrustedOSS wraps the DT API client in a breaker:
+  CLOSED = healthy, OPEN = DT unreachable (portal serves cached vuln
+  data), HALF_OPEN = cooldown elapsed, next probe decides. See
+  [On-call runbook → DT down](../admin-guide/oncall-runbook.md#scenario-1--dt-down--15-min).
+- **`audit_logs`.** Append-only table capturing every state-changing
+  operation (CRUD on first-class entities, plus explicit business
+  events). See [Audit log](../admin-guide/audit-log.md).
+- **Workspace.** Per-scan checkout directory under
+  `/opt/trustedoss/workspace` (host) / `/workspace` (container).
+  Cleaned up by the disk-pressure subsystem (> 30 days idle).
+
+## See also
+
+- [Architecture](./architecture.md) — how the pieces fit together
+- [API overview](./api-overview.md) — REST + WebSocket surface
+- [Environment variables](./env-variables.md) — every config knob

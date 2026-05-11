@@ -59,15 +59,16 @@ sidebar_position: 3
 ![프로젝트 상세 — tier 가로 막대 차트와 라이선스별 분포가 있는 Licenses 탭](/img/screenshots/user-licenses-donut.png)
 
 
-ORT는 모든 라이선스를 세 단계로 분류합니다.
+ORT는 모든 라이선스를 네 단계로 분류합니다. **코드 값** 컬럼은 API
+응답·감사 로그·빌드 게이트에서 사용되는 값이고, **UI 라벨** 컬럼은
+테이블·배지에 노출되는 라벨입니다.
 
-| 단계 | 심각도 | 예시 | 효과 |
+| 단계 (코드 값) | UI 라벨 | 빌드 게이트 효과 | 예시 |
 |---|---|---|---|
-| **Allowed** | — | MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, CC0-1.0, Unlicense | 빌드 게이트 영향 없음. |
-| **Conditional** | WARNING | LGPL-2.x, LGPL-3.x, MPL-2.0, EPL-1.x, EPL-2.0, CDDL-1.0 | [승인 워크플로우](./approvals.md) 트리거. 빌드 진행 — **반려(Rejected)** 결정 이후에도 동일. [승인 페이지의 caveat](./approvals.md#rejected-verdict-at-v200) 참고. |
-| **Forbidden** | ERROR | AGPL-3.0, GPL-2.0, GPL-3.0, SSPL-1.0, BUSL-1.1 | CI에서 빌드 게이트가 종료 코드 1 반환. |
-
-`Unknown`(라이선스 파싱 실패 또는 SPDX ID 가 분류기 매핑에 없음 — [아래](#why-so-many-unknown) 참고)은 노란 배지의 4번째 단계로 표시되며 항상 사람의 검토가 필요합니다.
+| `permissive` | **Allowed** | 빌드 게이트 영향 없음. | MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, CC0-1.0, Unlicense |
+| `conditional` | **Conditional** | [승인 워크플로우](./approvals.md) 트리거. 빌드 진행 — **반려(Rejected)** 결정 이후에도 동일. [승인 페이지의 caveat](./approvals.md#rejected-verdict-at-v200) 참고. | LGPL-2.x, LGPL-3.x, MPL-2.0, EPL-1.x, EPL-2.0, CDDL-1.0 |
+| `forbidden` | **Forbidden** | CI에서 빌드 게이트가 종료 코드 1 반환. | AGPL-3.0, GPL-2.0, GPL-3.0, SSPL-1.0, BUSL-1.1 |
+| `unknown` | **Unknown** | 검토 대상으로 노출; 자동 차단 없음. 항상 사람의 검토 필요. | 라이선스 파싱 실패 또는 분류기 매핑에 없는 SPDX ID — [아래](#why-so-many-unknown) 참고. |
 
 :::warning v2.0.0 의 분류 출처
 법적 단계 분류(`forbidden` / `conditional` / `permissive` / `unknown`)는 현재 `apps/backend/tasks/scan_source.py` 의 하드코딩된 SPDX → 단계 사전(`_LICENSE_CATEGORY_DEFAULTS`)으로 결정됩니다. 레포의 `ort/rules.kts` 파일은 placeholder 이며, v2.0.0 에서는 이를 수정해도 분류가 **변경되지 않습니다**. ORT 기반의 조직별 룰 커스터마이징은 v2.2 로드맵 항목입니다. 오늘 일회성 오버라이드가 필요하면 super-admin 이 사전을 패치하고 워커를 재시작하는 Operator 전용 경로를 사용하세요.
