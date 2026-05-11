@@ -48,6 +48,7 @@ Audit:
 from __future__ import annotations
 
 import hashlib
+import os
 import uuid
 from collections.abc import Sequence
 
@@ -112,15 +113,69 @@ class OAuthUnlinkBlocksLoginError(OAuthIdentityError):
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Marathon bundle 4 (T / L4) — minimum AUDIT_HASH_KEY length. The hash
+# function refuses keys shorter than this so an operator typo
+# (``AUDIT_HASH_KEY=test``) fails loud on the next OAuth event rather
+# than silently degrading the security posture. 16 bytes is the floor
+# below which the keyed-BLAKE2b ceiling collapses to bruteforce-feasible
+# entropy. Generators in the docs (.env.example) emit 32 bytes / 64 hex
+# chars so this is a generous lower bound.
+_AUDIT_HASH_KEY_MIN_BYTES = 16
+
 
 def _hash_provider_user_id(provider_user_id: str) -> str:
-    """SHA-256 hex digest of the provider's stable id.
+    """Keyed BLAKE2b digest of the provider's stable id (Marathon T / L4).
 
-    We hash so the audit log can prove "user X unlinked GitHub identity Y
-    at T" without retaining Y in plaintext. SHA-256 is irreversible
-    against a sufficiently large id space (GitHub numeric ids and Google
-    OIDC ``sub`` are both effectively non-enumerable).
+    The hash lets the audit log prove "user X unlinked GitHub identity Y
+    at T" without retaining Y in plaintext. The previous bare SHA-256
+    is vulnerable to a dictionary attack across the small space of
+    enumerable provider-user-ids (an attacker who suspects "is GitHub
+    user 12345 in the audit log?" can hash that id and search). Keyed
+    BLAKE2b with the deployment-secret ``AUDIT_HASH_KEY`` makes the
+    cross-deployment search impossible: an attacker without the key
+    cannot precompute candidate hashes.
+
+    Backward compatibility: when ``AUDIT_HASH_KEY`` is unset (default
+    until operators rotate), we fall back to the legacy bare SHA-256 so
+    existing audit rows continue to compare equally with newly-emitted
+    ones. Operators set the env var to opt in to the keyed digest; on
+    rotation the audit log loses cross-rotation comparability but gains
+    the cross-deployment hardening.
+
+    Failure modes (security-reviewer Medium follow-up):
+      - Key shorter than ``_AUDIT_HASH_KEY_MIN_BYTES`` → RuntimeError.
+        An operator typo (``AUDIT_HASH_KEY=test``) used to silently
+        downgrade entropy; we refuse the call so the next OAuth event
+        fails loudly and the operator can fix the binding before audit
+        rows accumulate at the wrong ceiling.
+      - In ``APP_ENV=prod`` with the key unset, log a structured
+        WARNING per call so operators see the signal that the
+        dictionary-attack hardening is opted out.
+
+    The key is read at call time per CLAUDE.md core rule #11 — no
+    module-level cache — so a key rotation takes effect on the next
+    request without a restart.
     """
+    key_raw = os.getenv("AUDIT_HASH_KEY", "")
+    if key_raw:
+        key_bytes = key_raw.encode("utf-8")
+        if len(key_bytes) < _AUDIT_HASH_KEY_MIN_BYTES:
+            raise RuntimeError(
+                "AUDIT_HASH_KEY is set but shorter than "
+                f"{_AUDIT_HASH_KEY_MIN_BYTES} bytes — refusing to use a "
+                "low-entropy key. Generate via: "
+                "python3 -c 'import secrets; print(secrets.token_hex(32))'"
+            )
+        return hashlib.blake2b(
+            provider_user_id.encode("utf-8"),
+            key=key_bytes,
+            digest_size=32,
+        ).hexdigest()
+    if (os.getenv("APP_ENV", "").strip().lower() == "prod"):
+        log.warning(
+            "audit_hash.legacy_sha256_active",
+            reason="AUDIT_HASH_KEY unset in APP_ENV=prod",
+        )
     return hashlib.sha256(provider_user_id.encode("utf-8")).hexdigest()
 
 

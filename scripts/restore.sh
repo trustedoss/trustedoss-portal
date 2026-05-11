@@ -28,27 +28,59 @@ warn()  { printf "${YELLOW}!${RESET} %s\n" "$1"; }
 fail()  { printf "${RED}✗${RESET} %s\n" "$1" >&2; exit 1; }
 title() { printf "\n${BOLD}%s${RESET}\n" "$1"; }
 
-[[ $# -eq 1 ]] || fail "usage: bash scripts/restore.sh <backup-dir>"
-BACKUP_DIR="$1"
+# Marathon bundle 4 (R / M5) — accept ``--confirm`` flag to skip the
+# interactive prompt. Programmatic callers (CI / install-uat workflow)
+# pass ``--confirm`` instead of ``BACKUP_RESTORE_CONFIRM=yes`` so the
+# intent is visible in argv (``ps`` output) rather than buried in env.
+# The legacy env var is no longer honoured — operators who automated
+# against it now see a WARNING (below) and fall through to the
+# interactive prompt unless they pass ``--confirm``.
+CONFIRM=0
+BACKUP_DIR=""
+for arg in "$@"; do
+  case "$arg" in
+    --confirm)
+      CONFIRM=1
+      ;;
+    --help|-h)
+      printf 'Usage: bash scripts/restore.sh [--confirm] <backup-dir>\n'
+      exit 0
+      ;;
+    -*)
+      fail "unknown flag: $arg (only --confirm / --help supported)"
+      ;;
+    *)
+      [[ -z "$BACKUP_DIR" ]] || fail "more than one backup-dir given"
+      BACKUP_DIR="$arg"
+      ;;
+  esac
+done
+[[ -n "$BACKUP_DIR" ]] || fail "usage: bash scripts/restore.sh [--confirm] <backup-dir>"
 [[ -d "$BACKUP_DIR" ]] || fail "no such directory: $BACKUP_DIR"
 [[ -f "$BACKUP_DIR/postgres.sql.gz" ]] || fail "missing $BACKUP_DIR/postgres.sql.gz"
 
 command -v docker-compose >/dev/null 2>&1 || fail "docker-compose (V1) is required."
+
+# Migration warning for operators still wired against the legacy env var.
+if [[ -n "${BACKUP_RESTORE_CONFIRM:-}" ]]; then
+  warn "BACKUP_RESTORE_CONFIRM env var is no longer honoured (Marathon bundle 4)."
+  warn "Pass --confirm as an argv flag instead: bash scripts/restore.sh --confirm <dir>"
+fi
 
 [[ -f .env ]] || fail ".env not found — restore requires the same env that took the backup."
 # shellcheck disable=SC1091
 set -a; . ./.env; set +a
 WORKSPACE_HOST_PATH=${WORKSPACE_HOST_PATH:-/opt/trustedoss/workspace}
 
-# Confirm with the operator before destructive ops. Programmatic callers
-# (e.g. the admin restore Celery task) set BACKUP_RESTORE_CONFIRM=yes to
-# skip the interactive prompt — direct CLI use still pauses for [y/N].
+# Confirm with the operator before destructive ops. The ``--confirm``
+# flag skips the interactive prompt for automated callers (CI / Celery
+# wrapper); direct CLI use without the flag still pauses for [y/N].
 title "About to restore from $BACKUP_DIR"
 warn "This will:"
 warn "  - REPLACE the current database content"
 warn "  - REPLACE $WORKSPACE_HOST_PATH (if workspace.tar.gz present)"
-if [[ "${BACKUP_RESTORE_CONFIRM:-}" == "yes" ]]; then
-  ok "BACKUP_RESTORE_CONFIRM=yes — skipping interactive prompt"
+if [[ $CONFIRM -eq 1 ]]; then
+  ok "--confirm flag passed — skipping interactive prompt"
 else
   read -r -p "Continue? [y/N] " reply
   [[ "$reply" =~ ^[Yy]$ ]] || fail "aborted"

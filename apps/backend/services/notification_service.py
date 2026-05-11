@@ -33,6 +33,7 @@ Audit:
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -319,7 +320,7 @@ async def create_notification(
         kind=kind,
         title=_truncate(title, 256),
         body=_truncate(body, 1024),
-        link=_truncate(link, 512) if link is not None else None,
+        link=_safe_link(link),
         target_table=target_table,
         target_id=target_id,
     )
@@ -379,7 +380,7 @@ def create_notification_sync(
         kind=kind,
         title=_truncate(title, 256),
         body=_truncate(body, 1024),
-        link=_truncate(link, 512) if link is not None else None,
+        link=_safe_link(link),
         target_table=target_table,
         target_id=target_id,
     )
@@ -409,6 +410,59 @@ def _truncate(value: str, max_len: int) -> str:
         return value
     # Reserve 1 char for the ellipsis so we never hit the column cap.
     return value[: max_len - 1] + "…"
+
+
+# Marathon bundle 4 (S / L1) — Notification.link safe-URL allow-list.
+# The SPA renders this value into an ``<a href>`` so anything here that
+# would let an attacker route a click to ``javascript:``, ``data:``, an
+# off-domain ``//evil.com``, or sneak in CRLF / NUL is a stored-XSS or
+# open-redirect primitive.
+#
+# Policy: only same-origin paths beginning with a single ``/`` and not
+# starting with ``//`` (which browsers treat as protocol-relative) or
+# ``/\\`` (which some old IE / WebKit versions parse as protocol-
+# relative). Reject anything containing CRLF / NUL / control bytes /
+# backslashes outright. Also reject ``?`` and ``#`` to defeat
+# open-redirect primitives where a downstream route consumes
+# ``?return_to=`` / ``?next=`` (security-reviewer Medium follow-up).
+# Any rejected value becomes ``None`` (the row is still inserted but
+# the SPA renders it as plain text — fail-safe rather than fail-loud,
+# since notifications are best-effort and we don't want a malformed
+# link to block the alert from reaching the user).
+_LINK_SAFE_RE = re.compile(r"^/(?![/\\])[^\x00-\x1f\x7f\\?#]*$")
+
+
+def _validate_link(link: str | None) -> str | None:
+    """Return ``link`` if same-origin path-only safe; otherwise ``None``."""
+    if link is None:
+        return None
+    if not isinstance(link, str):
+        return None
+    candidate = link.strip()
+    if not candidate or not _LINK_SAFE_RE.fullmatch(candidate):
+        log.warning("notification.link_rejected", link=link[:120])
+        return None
+    # Defence-in-depth: reject literal ``..`` segments. The regex blocks
+    # ``//`` and ``/\\`` but ``/foo/../etc/passwd`` is path-syntactically
+    # legal and would resolve outside the SPA's intended surface. We
+    # don't walk the FS — just reject any segment that equals ``..``.
+    parts = [p for p in candidate.split("/") if p]
+    if any(p == ".." for p in parts):
+        log.warning("notification.link_traversal_rejected", link=link[:120])
+        return None
+    return candidate
+
+
+def _safe_link(link: str | None) -> str | None:
+    """Compose ``_validate_link`` with the same 512-char truncation cap.
+
+    Returns None when the link is rejected (the SPA then renders the
+    alert as plain text — fail-safe).
+    """
+    cleaned = _validate_link(link)
+    if cleaned is None:
+        return None
+    return _truncate(cleaned, 512)
 
 
 def prefs_to_dict(prefs: NotificationPreferences) -> dict[str, Any]:

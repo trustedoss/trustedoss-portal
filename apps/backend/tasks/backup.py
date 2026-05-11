@@ -90,6 +90,18 @@ class BackupTaskError(Exception):
     """Raised when pg_dump / tar / manifest write fails."""
 
 
+class BackupNameCollisionError(BackupTaskError):
+    """Raised when ``backups/<kind>-<stamp>`` collides for too long.
+
+    Marathon bundle 4 (R / M4): two manual backups firing in the same UTC
+    second would otherwise have written into the same directory and
+    silently corrupted each other. We retry up to ``_NAME_COLLISION_MAX_RETRIES``
+    times (1 second apart so the next ``_utc_stamp()`` produces a fresh
+    name); if every slot in that window is taken the operator gets a
+    deterministic 409-shaped error rather than a torn backup.
+    """
+
+
 class RestoreTaskError(Exception):
     """Raised when psql / tar extract / pre-flight validation fails."""
 
@@ -151,11 +163,76 @@ def _pg_connection_args() -> tuple[list[str], dict[str, str]]:
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Marathon bundle 4 (R / M4) — slot-allocation retry budget. Each retry
+# sleeps ``_NAME_COLLISION_SLEEP_SECONDS`` (1s) so the next _utc_stamp()
+# produces a fresh second. 3 retries cover the realistic burst window
+# (admin clicks + Beat fire colliding within ~3 seconds); beyond that we
+# refuse rather than mis-match audit rows to a torn dir.
+_NAME_COLLISION_MAX_RETRIES = 3
+_NAME_COLLISION_SLEEP_SECONDS = 1
+
 
 def _utc_stamp(*, now: datetime | None = None) -> str:
     """Return ``YYYYMMDDTHHMMSSZ`` (matches the backup-name regex)."""
     base = now if now is not None else datetime.now(tz=UTC)
     return base.strftime("%Y%m%dT%H%M%SZ")
+
+
+def _allocate_backup_slot(
+    kind: Literal["auto", "manual"],
+    actor_uuid: uuid.UUID | None,
+) -> tuple[str, Path]:
+    """Pick a fresh ``backups/<kind>-<stamp>`` directory or raise.
+
+    Marathon bundle 4 (R / M4): the previous code used ``mkdir(exist_ok=
+    True)`` which silently shared a slot with any concurrent backup
+    firing in the same UTC second. We now try ``mkdir(exist_ok=False)``
+    and retry on FileExistsError until we get an exclusive slot or run
+    out of retries — at which point we emit a backup.failed audit row
+    with stage=name_collision and raise BackupNameCollisionError so the
+    caller surfaces a deterministic error instead of writing into a
+    half-built dir.
+
+    The mkdir is atomic on POSIX (returns EEXIST for the loser of a
+    same-second race) so two workers calling this helper concurrently
+    serialize correctly: exactly one wins each slot.
+    """
+    import time
+
+    last_name = ""
+    for attempt in range(_NAME_COLLISION_MAX_RETRIES + 1):
+        last_name = f"{kind}-{_utc_stamp()}"
+        candidate = backups_root() / last_name
+        try:
+            candidate.mkdir(parents=True, exist_ok=False)
+            return last_name, candidate
+        except FileExistsError:
+            log.warning(
+                "admin.backup.name_collision_retry",
+                name=last_name,
+                attempt=attempt,
+                max_retries=_NAME_COLLISION_MAX_RETRIES,
+            )
+            if attempt < _NAME_COLLISION_MAX_RETRIES:
+                time.sleep(_NAME_COLLISION_SLEEP_SECONDS)
+    _emit_audit(
+        actor_user_id=actor_uuid,
+        action="backup.failed",
+        target_id=last_name,
+        diff={
+            "kind": kind,
+            "stage": "name_collision",
+            "error": (
+                f"backup slot {last_name!r} taken after "
+                f"{_NAME_COLLISION_MAX_RETRIES} retries — another backup is "
+                f"likely in progress"
+            ),
+        },
+    )
+    raise BackupNameCollisionError(
+        f"backup slot {last_name!r} could not be allocated after "
+        f"{_NAME_COLLISION_MAX_RETRIES} retries"
+    )
 
 
 def _emit_audit(
@@ -525,9 +602,7 @@ def _run_backup(
         kind=kind,
     )
     actor_uuid = _coerce_actor(actor_user_id)
-    name = f"{kind}-{_utc_stamp()}"
-    backup_dir = backups_root() / name
-    backup_dir.mkdir(parents=True, exist_ok=True)
+    name, backup_dir = _allocate_backup_slot(kind, actor_uuid)
     pg_dump_path = backup_dir / "postgres.sql.gz"
     workspace_path = backup_dir / "workspace.tar.gz"
 
